@@ -1,0 +1,13 @@
+[tools]
+bun = "latest"
+
+
+[tasks.deps]
+run = "bun install"
+
+[tasks.start]
+run = "bun run dev"
+
+[tasks.defs]
+run = "bun updateDefs.js"
+
