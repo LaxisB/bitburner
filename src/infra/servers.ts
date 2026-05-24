@@ -2,6 +2,9 @@ import * as fmt from '../utils/format';
 import { NS } from '@ns';
 const prefix = `NODE`;
 
+/**
+ * continuously buys / upgrades servers to run scipts on
+ */
 export async function main(ns: NS) {
   ns.disableLog('ALL');
   const max = ns.cloud.getServerLimit();

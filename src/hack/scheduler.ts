@@ -53,6 +53,9 @@ export const HOST_RAM_BLOCKER: Record<string, number> = {
 
 const getRam = (server: Server) => server.maxRam - server.ramUsed - (HOST_RAM_BLOCKER[server.hostname] ?? 0);
 
+/**
+ * helper script to orchestrate running scripts across all available hosts
+ */
 export async function createScheduler(ns: NS, opts: SchedulerOpts): Promise<Scheduler> {
   const servers: Record<string, Server> = {};
   await updateServers(true);

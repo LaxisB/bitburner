@@ -11,6 +11,10 @@ const SCRIPT_SLAVE = '/hack/slave.js';
 let SCRIPT_COST = 1;
 const DEPLOY = ['utils.js', SCRIPT_SLAVE];
 
+/**
+ * main script setting up the server hacking loop
+ *
+ */
 export async function main(ns: NS) {
   ns.disableLog('ALL');
   ns.ui.openTail();
@@ -55,6 +59,9 @@ export async function main(ns: NS) {
 /**
  *  simple loop to update all servers
  *  it doesn't execute directly, but pass any action to the scheduler
+ *
+ *  this decides what to exec ute (weaken, grow, hack) on the servers, schedules the task
+ *  and also displays the current status for the admin to monitor
  */
 async function execute(ns: NS, servers: ServerWithEstimates[], scheduler: Scheduler) {
   for (const server of servers) {

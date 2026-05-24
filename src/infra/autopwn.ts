@@ -3,6 +3,9 @@ import { crawlServers } from '../utils/servers';
 import { HOME } from '../utils/constants';
 import { NS } from '@ns';
 
+/**
+ * automatically gains root on all possible targets
+ */
 export async function main(ns: NS) {
   ns.disableLog('ALL');
   const servers = await crawlServers(ns, HOME, 10);

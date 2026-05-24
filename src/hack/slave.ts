@@ -1,6 +1,5 @@
 import { NS } from '@ns';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 export interface SlaveArgs {
   threads: number;
   cmd: string;
@@ -9,6 +8,9 @@ export interface SlaveArgs {
   _?: string[];
 }
 
+/**
+ * simple slave script that runs the command provided
+ */
 export async function main(ns: NS) {
   const args: SlaveArgs = ns.flags([
     ['threads', 1],
@@ -32,7 +34,7 @@ export async function main(ns: NS) {
     case 'hack':
       return await ns.hack(args.target, { threads: args.threads });
     default:
-      ns.printf('uknown cmd: %s', args.cmd);
+      ns.printf('unknown cmd: %s', args.cmd);
       return;
   }
 }
