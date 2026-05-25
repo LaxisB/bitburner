@@ -1,9 +1,9 @@
 import { Server } from '@/utils/domain';
-import { crawlServers, crawlServersSync } from '@/utils/servers';
-import { NS } from '@ns';
+import { crawlServers } from '@/utils/servers';
+import { NS, Player } from '@ns';
 import { ScheduledTask, Task } from './domain';
 
-const SCRIPT_SLAVE = '/feat/hack/slave.js';
+const EXECUTOR_SCRIPT = '/feat/hack/executor.js';
 const SCRIPT_COST = 2;
 // keep this amount of ram free
 const HOST_RAM_BLOCKER: Record<string, number> = {
@@ -19,7 +19,7 @@ export async function main(ns: NS) {
 
   ns.printf('distributing slave script');
   for (const server of servers) {
-    ns.scp(SCRIPT_SLAVE, server!.hostname, 'home');
+    ns.scp(EXECUTOR_SCRIPT, server!.hostname, 'home');
   }
   runningTasks.clear();
 
@@ -32,7 +32,12 @@ export async function main(ns: NS) {
     servers = await getServers(ns);
     const targets = getTargets(ns, servers);
     const runners = getRunners(servers);
+    const player = ns.getPlayer();
     for (const target of targets) {
+      if (hasFormulas(ns)) {
+        const batch = getBatch(ns, target, player);
+        ns.printf('Suggested Batch: %j', batch);
+      }
       const task = getTargetAction(ns, target);
       if (task) {
         const success = schedule(ns, task, runners);
@@ -63,14 +68,12 @@ function schedule(ns: NS, task: Task, runners: Server[]): boolean {
   }
   const scheduled: ScheduledTask = {
     ...task,
-    finishesAt: task.duration + Date.now(),
     runner: runner.hostname,
-    duration: ns.getWeakenTime(runner.hostname),
     threads: Math.min(requestedThreads, possibleThreads),
     pid: -1,
   };
 
-  const pid = runSlave(ns, scheduled);
+  const pid = executeTask(ns, scheduled);
   scheduled.pid = pid;
   if (pid) {
     // mutate runner state to update memory
@@ -87,7 +90,7 @@ function schedule(ns: NS, task: Task, runners: Server[]): boolean {
 }
 
 function cleanPendingTasks(ns: NS) {
-  runningTasks.forEach((tasks, host) => {
+  runningTasks.forEach((tasks) => {
     tasks.forEach((task, i) => {
       const isDone = !ns.isRunning(task.pid, task.target);
       if (isDone) {
@@ -95,6 +98,55 @@ function cleanPendingTasks(ns: NS) {
       }
     });
   });
+}
+
+function getBatch(ns: NS, server: Server, player: Player): Task[] | null {
+  const weakenTime = ns.formulas.hacking.weakenTime(server, player);
+  const growTime = ns.formulas.hacking.growTime(server, player);
+  const hackTime = ns.formulas.hacking.hackTime(server, player);
+
+  const secCurr = ns.getServerSecurityLevel(server.hostname);
+  const secMin = ns.getServerMinSecurityLevel(server.hostname);
+  const secDelta = ns.weakenAnalyze(1);
+  const weaken1Threads = Math.ceil((secCurr - secMin) / secDelta);
+
+  const growthThreads = ns.formulas.hacking.growThreads(server, player, server.moneyMax ?? Number.MAX_SAFE_INTEGER);
+
+  const growthEffect = ns.growthAnalyzeSecurity(growthThreads);
+  const weaken2Threads = Math.ceil((secMin + growthEffect) / secDelta);
+
+  // factor to multiply our required hack threads with to handle hacking failures
+  // we're adjusting the 'raw' factor down by 1x in case we high roll.
+  const failureFactor = Math.max(1, Math.floor(1 / ns.formulas.hacking.hackChance(server, player)) - 1);
+  const rawHackThreadsRequired = 100 / ns.formulas.hacking.hackPercent(server, player);
+  const hackThreads = Math.floor(rawHackThreadsRequired * failureFactor);
+
+  const weaken1: Task = {
+    action: 'w',
+    target: server.hostname,
+    threads: weaken1Threads,
+  };
+
+  const grow: Task = {
+    action: 'g',
+    target: server.hostname,
+    threads: growthThreads,
+    delay: weakenTime + 1 - growTime,
+  };
+  const weaken2: Task = {
+    action: 'w',
+    target: server.hostname,
+    threads: weaken2Threads,
+    delay: weakenTime + 2 - growTime,
+  };
+  const hack: Task = {
+    action: 'h',
+    target: server.hostname,
+    threads: hackThreads,
+    delay: weakenTime + 3 - hackTime,
+  };
+
+  return [weaken1, grow, weaken2, hack];
 }
 
 function getTargetAction(ns: NS, server: Server): Task | null {
@@ -127,9 +179,7 @@ function getTargetAction(ns: NS, server: Server): Task | null {
     return {
       target: server.hostname,
       action: 'w',
-      result: secDelta,
       threads: threads,
-      duration: ns.getWeakenTime(server.hostname),
     };
   }
 
@@ -137,18 +187,14 @@ function getTargetAction(ns: NS, server: Server): Task | null {
     return {
       target: server.hostname,
       action: 'g',
-      result: 1 / growthsToMax,
       threads: growthsToMax,
-      duration: ns.getGrowTime(server.hostname),
     };
   }
 
   return {
     target: server.hostname,
     action: 'h',
-    result: ns.hackAnalyze(server.hostname),
     threads: maxHackThreads,
-    duration: hackTime,
   };
 }
 
@@ -177,9 +223,18 @@ async function getServers(ns: NS) {
 
 const getRam = (server: Server) => server.maxRam - server.ramUsed - (HOST_RAM_BLOCKER[server.hostname] ?? 0);
 
-function runSlave(ns: NS, task: ScheduledTask) {
+function executeTask(ns: NS, task: ScheduledTask) {
   const args = ['threads', 'delay', 'action', 'target']
     .filter((key) => !!(task as any)[key])
     .flatMap((key) => [`--${key}`, (task as Record<string, any>)[key]]);
-  return ns.exec(SCRIPT_SLAVE, task.runner, task.threads, ...(args as any));
+  return ns.exec(EXECUTOR_SCRIPT, task.runner, task.threads, ...(args as any));
+}
+
+function hasFormulas(ns: NS) {
+  try {
+    ns.formulas.hacking.weakenTime(ns.getServer('foodnstuff'), ns.getPlayer());
+    return true;
+  } catch {
+    return false;
+  }
 }

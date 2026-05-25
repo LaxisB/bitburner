@@ -7,15 +7,11 @@ export interface ExtendedServerStats extends Server {
 export interface Task {
   target: string;
   action: string;
-  result: number;
   threads: number;
   delay?: number;
-  duration: number;
-  comment?: string;
 }
 
 export interface ScheduledTask extends Task {
-  finishesAt: number;
   runner: string;
   pid: number;
 }
