@@ -70,8 +70,8 @@ export async function createScheduler(ns: NS, opts: SchedulerOpts): Promise<Sche
    * @returns -
    */
   async function schedule(task: Task) {
-    const runner = getAvailableRunners().sort((a, b) => (getRam(a) > getRam(b) ? -1 : 1))[0];
-
+    const runners = getAvailableRunners().sort((a, b) => (getRam(a) > getRam(b) ? -1 : 1));
+    const runner = runners[0];
     if (!runner) {
       return null;
     }
@@ -107,7 +107,7 @@ export async function createScheduler(ns: NS, opts: SchedulerOpts): Promise<Sche
   function getAvailableTargets() {
     return Object.values(servers)
       .filter((s) => s.hostname != HOME)
-      .filter((s) => s.moneyAvailable)
+      .filter((s) => !!s.moneyMax)
       .map((s) => {
         const taskList = Array.from(runningTasks).filter((task) => task.target === s.hostname);
 
@@ -143,7 +143,8 @@ export async function createScheduler(ns: NS, opts: SchedulerOpts): Promise<Sche
           tasksRunning: taskList.length,
         };
       })
-      .sort((a, b) => a.money.current - b.money.current);
+      .filter((s) => s.canHack)
+      .sort((a, b) => a.money.max - b.money.max);
   }
 
   function getAvailableRunners() {

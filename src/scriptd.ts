@@ -71,6 +71,7 @@ export async function main(ns: NS) {
       Object.assign(oldNode, newTree);
       writeTree(ns, tree);
     }
+    return;
   }
 
   if (!args._.length) {
@@ -191,11 +192,11 @@ function avg(nums: number[]) {
 }
 
 function readTree(ns: NS) {
-  return JSON.parse(ns.read('tree.txt'));
+  return JSON.parse(ns.read('tree.json'));
 }
 
 function writeTree(ns: NS, tree: HostTree) {
-  ns.write('tree.txt', JSON.stringify(tree), 'w');
+  ns.write('tree.json', JSON.stringify(tree), 'w');
 }
 
 async function iterateTree(ns: NS, tree: HostTree, blacklist: string[], fn: (tree: HostTree) => Promise<any>) {

@@ -1,4 +1,3 @@
-import * as fmt from '../utils/format';
 import { NS } from '@ns';
 const prefix = `NODE`;
 
@@ -34,7 +33,7 @@ export async function main(ns: NS) {
       ns.printf(
         '[%s] reached limit. deleting smallest node (ram=%s)',
         new Date().toLocaleTimeString(),
-        fmt.formatRam(toDelete.ram),
+        ns.format.ram(toDelete.ram),
       );
       ns.killall(toDelete.host);
       const res = ns.cloud.deleteServer(toDelete.host);
@@ -44,7 +43,7 @@ export async function main(ns: NS) {
         continue;
       }
     }
-    ns.printf('[%s] bought a %s box', new Date().toLocaleTimeString(), fmt.formatRam(2 ** pow));
+    ns.printf('[%s] bought a %s box', new Date().toLocaleTimeString(), ns.format.ram(2 ** pow));
     ns.cloud.purchaseServer(prefix, targetRam);
     await ns.sleep(5_000);
   }

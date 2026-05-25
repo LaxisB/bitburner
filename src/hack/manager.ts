@@ -2,14 +2,17 @@ import { Server } from '../utils/domain';
 import { HOME } from '../utils/constants';
 import * as log from '..//utils/log';
 import * as fmt from '../utils/format';
-import { Task, ScheduledTask, Scheduler, ServerWithEstimates, createScheduler, HOST_RAM_BLOCKER } from './scheduler';
+import { Task, ScheduledTask, Scheduler, ServerWithEstimates, createScheduler } from './scheduler';
 import type { TableConfig } from '../utils/log';
 import type { SlaveArgs } from './slave';
 import { NS } from '@ns';
 
 const SCRIPT_SLAVE = '/hack/slave.js';
-let SCRIPT_COST = 1;
+let SCRIPT_COST = 2;
 const DEPLOY = ['utils.js', SCRIPT_SLAVE];
+
+// map of hostnames to the last action executed
+let lastActions: Record<string, Task> = {};
 
 /**
  * main script setting up the server hacking loop
@@ -41,7 +44,7 @@ export async function main(ns: NS) {
 
   let count = 1;
   while (true) {
-    await scheduler.updateServers(count % 10 === 0);
+    await scheduler.updateServers(count % 10 === 0); // do a full crawl every 10 updates ~= every 5 sec
     const runners = scheduler.getAvailableRunners();
     const targets = scheduler.getAvailableTargets();
     const servers = scheduler.getServers();
@@ -51,7 +54,7 @@ export async function main(ns: NS) {
       continue;
     }
     await execute(ns, targets, scheduler);
-    await ns.sleep(500);
+    await ns.sleep(1000);
     count++;
   }
 }
@@ -60,14 +63,22 @@ export async function main(ns: NS) {
  *  simple loop to update all servers
  *  it doesn't execute directly, but pass any action to the scheduler
  *
- *  this decides what to exec ute (weaken, grow, hack) on the servers, schedules the task
- *  and also displays the current status for the admin to monitor
+ *  this decides what to execute (weaken, grow, hack) on the servers and schedules the task
  */
 async function execute(ns: NS, servers: ServerWithEstimates[], scheduler: Scheduler) {
   for (const server of servers) {
+    // don't assign tasks to servers that have tasks pending
+    if (scheduler.getPendingTasks().find((t) => t.target === server.hostname)) {
+      continue;
+    }
     try {
       const action = getNextAction(ns, server);
-      await scheduler.schedule(action);
+      lastActions[server.hostname] = action;
+      const res = await scheduler.schedule(action);
+      if (!res) {
+        // no runners available. wait until we're good again
+        break;
+      }
     } catch (e) {
       ns.tprintf(e as any);
       ns.printf('failed running %s', server.hostname);
@@ -88,14 +99,17 @@ function getNextAction(ns: NS, server: ServerWithEstimates): Task {
 
   const moneyMax = server.money.max;
   const moneyCurr = server.money.current;
+  const moneyMissing = moneyMax - moneyCurr;
+  const currentToMaxMultiplier = Math.min((moneyCurr + moneyMissing) / (moneyCurr || 1), 10); // cap out at 10xing
+
+  const growthsToMax = Math.floor(ns.growthAnalyze(server.hostname, currentToMaxMultiplier));
   // check how often we'd need to grow to max out money
-  const growthsPerDouble = ns.growthAnalyze(server.hostname, 2);
 
   const shouldGrow = moneyCurr <= moneyMax * 0.5;
 
   const hackTime = ns.getHackTime(server.hostname);
   const hackDelta = moneyCurr * ns.hackAnalyze(server.hostname);
-  const maxHackThreads = Math.floor(moneyCurr / hackDelta);
+  const maxHackThreads = Math.max(Math.floor(moneyCurr / hackDelta), 1);
 
   if (secCurr - secDelta >= secMin) {
     const threads = Math.ceil((secCurr - secMin) / secDelta);
@@ -108,12 +122,12 @@ function getNextAction(ns: NS, server: ServerWithEstimates): Task {
     };
   }
 
-  if (shouldGrow || !server.canHack) {
+  if (shouldGrow && growthsToMax >= 1) {
     return {
       target: server.hostname,
       action: 'grow',
-      result: 1 / growthsPerDouble,
-      threads: growthsPerDouble,
+      result: 1 / growthsToMax,
+      threads: growthsToMax,
       duration: ns.getGrowTime(server.hostname),
     };
   }
@@ -144,39 +158,44 @@ function logStatus(
         getter: (item) => fmt.formatString(item.hostname, 20),
       },
       {
-        header: '$',
-        width: 10,
-        getter: (item) => fmt.formatMoney(item.money.current),
+        header: '$ (% max)',
+        width: 16,
+        getter: (item) =>
+          `${fmt.formatMoney(item.money.current)} (${ns.format.percent(item.money.current / item.money.max)})`,
       },
       {
-        header: '$ -',
+        header: 'sec (over base)',
+        width: 16,
+        getter: (item) =>
+          `${ns.format.number(ns.getServerSecurityLevel(item.hostname))} (${fmt.formatNum(
+            (ns.getServerSecurityLevel(item.hostname) - ns.getServerMinSecurityLevel(item.hostname)) /
+              ns.getServerMinSecurityLevel(item.hostname),
+          )}x)`,
+      },
+      {
+        header: 'task',
+        width: 16,
+        getter: (item) => {
+          const action = lastActions[item.hostname];
+          if (!action) {
+            return '';
+          }
+          return `${action.action}x${action.threads}`;
+        },
+      },
+      {
+        header: 'dur',
         width: 8,
-        getter: (item) => fmt.formatMoney(item.money.hacked),
-      },
-      {
-        header: '$ +',
-        width: 8,
-        getter: (item) => fmt.formatMoney(item.money.grown),
-      },
-      {
-        header: 'secu Δ',
-        width: 6,
-        getter: (item) => fmt.formatNum(ns.getServerSecurityLevel(item.hostname) - item.security.min),
-      },
-      {
-        header: 'secu -',
-        width: 6,
-        getter: (item) => fmt.formatNum(item.security.current - ns.getServerSecurityLevel(item.hostname)),
+        getter: (item) => {
+          const task = tasks.find((t) => t.target === item.hostname);
+          return task ? fmt.formatDuration(task.finishesAt - Date.now()) : '';
+        },
       },
     ],
   };
 
   const threads = tasks.reduce((acc, curr) => acc + curr.threads, 0);
-  const tasksToShow = tasks.sort((a, b) => a.finishesAt - b.finishesAt).slice(0, 5);
-  const potentialRam = servers.reduce(
-    (acc, curr) => acc + curr.maxRam - curr.ramUsed - (HOST_RAM_BLOCKER[curr.hostname] ?? 0),
-    0,
-  );
+  const potentialRam = servers.reduce((acc, curr) => acc + curr.maxRam - curr.ramUsed, 0) ?? 0;
 
   const byAction = tasks.reduce((acc, curr) => {
     if (!acc[curr.action]) {
@@ -190,31 +209,19 @@ function logStatus(
   log.clear(ns);
   log.table(
     ns,
-    targets.filter((s) => s.tasksRunning).sort((a, b) => a.hostname.localeCompare(b.hostname)),
+    targets.sort((a, b) => a.hostname.localeCompare(b.hostname)),
     serverTableConfig,
   );
-  ns.print('  ');
-  tasksToShow.forEach((task: ScheduledTask) =>
-    ns.printf(
-      '[%6s] %15s ---> %-15s %-15s for %8s',
-      fmt.formatDuration(task.finishesAt - Date.now()),
-      fmt.formatString(task.runner),
-      fmt.formatString(task.target),
-      `${task.action} (x${task.threads})`,
-      fmt.formatNum(task.result * task.threads),
-    ),
-  );
   ns.printf(
-    `targets=%-3s runners=%-3s ramUsed=%s ramFree=%s`,
+    `targets: %-3s runners: %-3s ram used: %s free: %s`,
     targets.length.toString().padStart(3, '0'),
     runners.length.toString().padStart(3, '0'),
-    fmt.formatRam(threads * SCRIPT_COST),
-    fmt.formatRam(potentialRam),
+    ns.format.ram(threads * SCRIPT_COST).padEnd(10, ' '),
+    ns.format.ram(potentialRam),
   );
+
   ns.printf(
-    `total=%s(%s) hack=%i(%s) grow=%i(%s) weaken=%i(%s)`,
-    fmt.formatNum(tasks.length),
-    fmt.formatNum(threads),
+    `hack: %i(%s) grow: %i(%s) weaken: %i(%s)`,
     byAction.hack?.count ?? 0,
     fmt.formatNum(byAction.hack?.threads ?? 0),
     byAction.grow?.count ?? 0,

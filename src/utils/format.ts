@@ -3,11 +3,17 @@ const numFormatter = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 
 export function formatDuration(millis: number) {
   const time = Math.floor(millis / 1000);
   const secs = time % 60;
-  const mins = Math.floor(time / 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
+  let mins = Math.floor(time / 60);
+  const hours = Math.floor(mins / 60);
+  mins = mins - hours * 60;
+
+  return `${hours ? hours + ':' : ''}${mins}:${secs.toString().padStart(2, '0')}`;
 }
 export function formatNum(num: number) {
   return num < 0.00005 ? '0' : numFormatter.format(num);
+}
+export function formatPercent(num: number) {
+  return `${(num * 100).toFixed(2)}%`;
 }
 
 export function formatMoney(money: number) {
@@ -18,19 +24,7 @@ export function formatMoney(money: number) {
 
   const i = Math.floor(Math.log(money) / Math.log(k));
 
-  return `$ ${numFormatter.format(money / Math.pow(k, i))}${sizes[i]}`;
-}
-
-export function formatRam(gigs: number, decimals = 2) {
-  if (!gigs) return '0GB';
-
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-
-  const i = Math.floor(Math.log(gigs) / Math.log(k));
-
-  return `${parseFloat((gigs / Math.pow(k, i)).toFixed(dm))}${sizes[i] ?? 'MB'}`;
+  return `$${numFormatter.format(money / Math.pow(k, i))}${sizes[i]}`;
 }
 
 export function formatString(val: string, maxLen = 15) {

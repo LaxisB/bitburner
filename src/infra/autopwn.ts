@@ -33,6 +33,10 @@ export async function main(ns: NS) {
       try {
         ns.nuke(host);
       } catch (e) {}
+
+      if (server.hasAdminRights) {
+        ns.printf(`pwned ${host}`);
+      }
     }
 
     await ns.sleep(5000);
