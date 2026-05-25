@@ -3,7 +3,7 @@ import { NS } from '@ns';
 export interface SlaveArgs {
   threads: number;
   delay: number;
-  cmd: string;
+  action: string;
   runner: string;
   target: string;
   _?: string[];
@@ -16,20 +16,21 @@ export async function main(ns: NS) {
   const args: SlaveArgs = ns.flags([
     ['threads', 1],
     ['delay', 0],
-    ['cmd', 'grow'],
+    ['action', 'grow'],
     ['runner', ''],
     ['target', ''],
   ]) as any;
 
-  if (!args.cmd) {
+  if (!args.action) {
     return;
   }
   if (!args.target) {
     return;
   }
+
   ns.ramOverride(2);
 
-  switch (args.cmd) {
+  switch (args.action) {
     case 'w':
       return await ns.weaken(args.target, { threads: args.threads, additionalMsec: args.delay });
     case 'g':
@@ -37,7 +38,7 @@ export async function main(ns: NS) {
     case 'h':
       return await ns.hack(args.target, { threads: args.threads, additionalMsec: args.delay });
     default:
-      ns.printf('unknown cmd: %s', args.cmd);
+      ns.printf('unknown cmd: %s', args.action);
       return;
   }
 }

@@ -27,3 +27,35 @@ export async function crawlServers(ns: NS, host: string, depth = 10): Promise<Se
 
   return list;
 }
+
+export function crawlServersSync(ns: NS, startHost = 'home') {
+  var knownHosts = new Set<string>();
+  var scannedHosts = new Set<string>();
+
+  knownHosts.add(startHost);
+
+  while (scannedHosts.size < knownHosts.size) {
+    const toScan = difference(knownHosts, scannedHosts);
+    for (const server of toScan) {
+      ns.scan(server).forEach((host) => knownHosts.add(host));
+    }
+  }
+
+  return [...knownHosts].map((host) => ns.getServer(host));
+}
+
+function difference<T>(a: Set<T>, b: Set<T>): Set<T> {
+  const result = new Set<T>();
+  for (const item of a) {
+    if (!b.has(item)) {
+      result.add(item);
+    }
+  }
+  for (const item of b) {
+    if (!a.has(item)) {
+      result.add(item);
+    }
+  }
+
+  return result;
+}

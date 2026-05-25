@@ -32,6 +32,7 @@ export async function main(ns: NS) {
         runner: action.runner,
         target: action.target,
         threads: action.threads,
+        delay: action.delay ?? 0,
       });
     },
   });
@@ -111,11 +112,11 @@ function getNextAction(ns: NS, server: ServerWithEstimates): Task {
   const hackDelta = moneyCurr * ns.hackAnalyze(server.hostname);
   const maxHackThreads = Math.max(Math.floor(moneyCurr / hackDelta), 1);
 
-  if (secCurr - secDelta >= secMin) {
+  if (secCurr - secDelta >= secMin + 0.03) {
     const threads = Math.ceil((secCurr - secMin) / secDelta);
     return {
       target: server.hostname,
-      action: 'weaken',
+      action: 'w',
       result: secDelta,
       threads: threads,
       duration: ns.getWeakenTime(server.hostname),
@@ -125,7 +126,7 @@ function getNextAction(ns: NS, server: ServerWithEstimates): Task {
   if (shouldGrow && growthsToMax >= 1) {
     return {
       target: server.hostname,
-      action: 'grow',
+      action: 'g',
       result: 1 / growthsToMax,
       threads: growthsToMax,
       duration: ns.getGrowTime(server.hostname),
@@ -134,7 +135,7 @@ function getNextAction(ns: NS, server: ServerWithEstimates): Task {
 
   return {
     target: server.hostname,
-    action: 'hack',
+    action: 'h',
     result: ns.hackAnalyze(server.hostname),
     threads: maxHackThreads,
     duration: hackTime,
@@ -180,7 +181,7 @@ function logStatus(
           if (!action) {
             return '';
           }
-          return `${action.action}x${action.threads}`;
+          return `${action.action}${action.threads}`;
         },
       },
       {

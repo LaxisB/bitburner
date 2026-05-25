@@ -24,9 +24,11 @@ export interface Task {
   action: string;
   result: number;
   threads: number;
+  delay?: number;
   duration: number;
   comment?: string;
 }
+
 export interface ScheduledTask extends Task {
   finishesAt: number;
   runner: string;
@@ -107,7 +109,6 @@ export async function createScheduler(ns: NS, opts: SchedulerOpts): Promise<Sche
   function getAvailableTargets() {
     return Object.values(servers)
       .filter((s) => s.hostname != HOME)
-      .filter((s) => !!s.moneyMax)
       .map((s) => {
         const taskList = Array.from(runningTasks).filter((task) => task.target === s.hostname);
 
@@ -126,9 +127,11 @@ export async function createScheduler(ns: NS, opts: SchedulerOpts): Promise<Sche
 
         const securityMin = ns.getServerMinSecurityLevel(s.hostname);
         const securityCurrent = ns.getServerSecurityLevel(s.hostname);
+        const canHack = ns.getServerRequiredHackingLevel(s.hostname) <= ns.getHackingLevel();
 
         return {
           ...s,
+          score: (s.moneyMax ?? 0) * (canHack ? 1 : 0.3),
           security: {
             min: securityMin,
             current: securityCurrent - weakens,
@@ -139,11 +142,11 @@ export async function createScheduler(ns: NS, opts: SchedulerOpts): Promise<Sche
             hacked: moneyHacked,
             grown: moneyGrown,
           },
-          canHack: ns.getServerRequiredHackingLevel(s.hostname) <= ns.getHackingLevel(),
+          canHack,
           tasksRunning: taskList.length,
         };
       })
-      .filter((s) => s.canHack)
+      .filter((s) => !!s.moneyMax && s.hostname != 'home' && !s.hostname.startsWith('NODE'))
       .sort((a, b) => a.money.max - b.money.max);
   }
 

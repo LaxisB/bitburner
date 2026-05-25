@@ -9,7 +9,7 @@ export async function main(ns: NS) {
   const max = ns.cloud.getServerLimit();
   while (true) {
     const player = ns.getPlayer();
-    const maxCost = player.money * 0.1;
+    const maxCost = player.money * 0.3;
 
     const servers = ns.cloud
       .getServerNames()

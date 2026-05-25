@@ -8,12 +8,13 @@ import { NS } from '@ns';
  */
 export async function main(ns: NS) {
   ns.disableLog('ALL');
-  const servers = await crawlServers(ns, HOME, 10);
+  const servers = await crawlServers(ns, HOME, 100);
 
   while (true) {
-    const todo = servers.filter((server) => !server.hasAdminRights);
-
-    for (const server of todo) {
+    for (const server of servers) {
+      if (server.hasAdminRights || server.hostname.startsWith('NODE')) {
+        continue;
+      }
       const host = server.hostname;
       try {
         ns.brutessh(host);

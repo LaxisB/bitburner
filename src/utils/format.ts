@@ -7,8 +7,9 @@ export function formatDuration(millis: number) {
   const hours = Math.floor(mins / 60);
   mins = mins - hours * 60;
 
-  return `${hours ? hours + ':' : ''}${mins}:${secs.toString().padStart(2, '0')}`;
+  return `${hours ? hours + ':' : ''}${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
+
 export function formatNum(num: number) {
   return num < 0.00005 ? '0' : numFormatter.format(num);
 }
