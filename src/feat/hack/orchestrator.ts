@@ -34,17 +34,17 @@ export async function main(ns: NS) {
     const runners = getRunners(servers);
     const player = ns.getPlayer();
     for (const target of targets) {
-      if (hasFormulas(ns)) {
-        const batch = getBatch(ns, target, player);
-        ns.printf('Suggested Batch: %j', batch);
+      const batch = getBatch(ns, target, player);
+      if (!batch) {
+        break;
       }
-      const task = getTargetAction(ns, target);
-      if (task) {
-        const success = schedule(ns, task, runners);
-        if (!success) {
-          // could not schedule task => no more space. stop here
-          break;
-        }
+      const success = scheduleBatch(ns, batch, runners);
+      if (!success) {
+        ns.printf('failed scheduling batch for %s', batch[0].target);
+        return;
+        break;
+      } else {
+        ns.printf('scheduled batch for %s', batch[0].target);
       }
     }
 
@@ -52,41 +52,99 @@ export async function main(ns: NS) {
   }
 }
 
-function schedule(ns: NS, task: Task, runners: Server[]): boolean {
-  const runner = runners[0];
-  if (!runner) {
-    ns.printf('no runner available');
+function scheduleBatch(ns: NS, tasks: Task[], runners: Server[]): boolean {
+  const [w, g, w2, h] = tasks;
+  let pids: number[] = [];
+  const wPids = schedule(ns, w, runners);
+  pids = pids.concat(wPids);
+  if (!wPids.length) {
+    ns.printf('failed to schedule %j', w);
     return false;
   }
+  const gPids = schedule(ns, g, runners);
+  pids = pids.concat(gPids);
+  if (!gPids.length) {
+    ns.printf('failed to schedule %j', g);
+    pids.forEach((pid) => ns.kill(pid));
+    return false;
+  }
+  const w2Pids = schedule(ns, w2, runners);
+  pids = pids.concat(w2Pids);
+  if (!w2Pids.length) {
+    ns.printf('failed to schedule %j', w2);
+    pids.forEach((pid) => ns.kill(pid));
+    return false;
+  }
+  const hPids = schedule(ns, h, runners);
+  pids = pids.concat(hPids);
+  if (!hPids.length) {
+    ns.printf('failed to schedule %j', h);
+    pids.forEach((pid) => ns.kill(pid));
+    return false;
+  }
+  return true;
+}
+
+function schedule(ns: NS, task: Task, runners: Server[]): number[] {
+  if (!runners.length) {
+    ns.printf('no runner available');
+    return [];
+  }
+
+  runners
+    .filter((x) => x.hasAdminRights)
+    .forEach((x) => ns.printf('%s: %i', x.hostname.padEnd(20, ' '), x.maxRam - x.ramUsed));
 
   //TODO: don't naively cap threads to fit on one machine, but rather split the task over multiple machines
   //to get the wanted result
   const requestedThreads = Math.floor(task.threads);
-  const possibleThreads = Math.floor(getRam(runner) / SCRIPT_COST);
-  if (possibleThreads < 1) {
-    return false;
+
+  let scheduledThreads = 0;
+  let pids = [];
+
+  while (scheduledThreads < requestedThreads) {
+    const runner = runners.find((x) => x.ramUsed + SCRIPT_COST < x.maxRam)!;
+    if (!runner) {
+      ns.printf('no runner available');
+      pids.forEach((pid) => ns.kill(pid));
+      return [];
+    }
+    const possibleThreads = Math.floor(getRam(runner) / SCRIPT_COST);
+    if (possibleThreads < 1) {
+      ns.printf('ran out of runners');
+      pids.forEach((pid) => ns.kill(pid));
+      return [];
+    }
+
+    const threads = Math.min(requestedThreads - scheduledThreads, possibleThreads);
+    const scheduled: ScheduledTask = {
+      ...task,
+      runner: runner.hostname,
+      threads,
+      pid: -1,
+    };
+    const pid = executeTask(ns, scheduled);
+    scheduled.pid = pid;
+    if (pid) {
+      // mutate runner state to update memory
+      // we are getting fresh data the next time we run, so this isn't permanent
+      runner.ramUsed += SCRIPT_COST * scheduled.threads;
+      const running = runningTasks.get(task.target) ?? [];
+      running.push(scheduled);
+      runningTasks.set(task.target, running); // store after mutation in case .get() returned null
+      ns.printf('%s -- %s x%i -> %s', scheduled.runner, scheduled.action, scheduled.threads, scheduled.target);
+      pids.push(pid);
+      scheduledThreads += threads;
+      ns.printf('scheduled %i of %i threads', scheduledThreads, requestedThreads);
+    } else {
+      // kill each partial task if we couldn't schedule it fully
+      pids.forEach((pid) => ns.kill(pid));
+      pids = [];
+      break;
+    }
   }
-  const scheduled: ScheduledTask = {
-    ...task,
-    runner: runner.hostname,
-    threads: Math.min(requestedThreads, possibleThreads),
-    pid: -1,
-  };
 
-  const pid = executeTask(ns, scheduled);
-  scheduled.pid = pid;
-  if (pid) {
-    // mutate runner state to update memory
-    // we are getting fresh data the next time we run, so this isn't permanent
-    runner.ramUsed += SCRIPT_COST * scheduled.threads;
-
-    const running = runningTasks.get(task.target) ?? [];
-    running.push(scheduled);
-    runningTasks.set(task.target, running); // store after mutation in case .get() returned null
-    ns.printf('%s -- %s x%i -> %s', scheduled.runner, scheduled.action, scheduled.threads, scheduled.target);
-  }
-
-  return !!pid;
+  return pids;
 }
 
 function cleanPendingTasks(ns: NS) {
@@ -101,24 +159,50 @@ function cleanPendingTasks(ns: NS) {
 }
 
 function getBatch(ns: NS, server: Server, player: Player): Task[] | null {
-  const weakenTime = ns.formulas.hacking.weakenTime(server, player);
-  const growTime = ns.formulas.hacking.growTime(server, player);
-  const hackTime = ns.formulas.hacking.hackTime(server, player);
+  const pending = runningTasks.get(server.hostname);
+
+  //TODO if we were smart, we'd forecast the result of our pending tasks and already queue the next one
+  // alas, we're not
+  if (pending?.length) {
+    return null;
+  }
+
+  let hackTime;
+  let weakenTime;
+  let growTime;
+  const formulasAvailable = hasFormulas(ns);
+  if (formulasAvailable) {
+    weakenTime = ns.formulas.hacking.weakenTime(server, player);
+    growTime = ns.formulas.hacking.growTime(server, player);
+    hackTime = ns.formulas.hacking.hackTime(server, player);
+  } else {
+    hackTime = ns.getHackTime(server.hostname);
+    weakenTime = hackTime * 4;
+    growTime = hackTime * 3.2;
+  }
 
   const secCurr = ns.getServerSecurityLevel(server.hostname);
   const secMin = ns.getServerMinSecurityLevel(server.hostname);
   const secDelta = ns.weakenAnalyze(1);
   const weaken1Threads = Math.ceil((secCurr - secMin) / secDelta);
 
-  const growthThreads = ns.formulas.hacking.growThreads(server, player, server.moneyMax ?? Number.MAX_SAFE_INTEGER);
+  const growthThreads = formulasAvailable
+    ? ns.formulas.hacking.growThreads(server, player, server.moneyMax ?? Number.MAX_SAFE_INTEGER)
+    : Math.min(8, ns.growthAnalyze(server.hostname, (server.moneyMax ?? 1) / (server.moneyAvailable ?? 1))); // cap naiive growths at 128 threads
 
   const growthEffect = ns.growthAnalyzeSecurity(growthThreads);
   const weaken2Threads = Math.ceil((secMin + growthEffect) / secDelta);
 
   // factor to multiply our required hack threads with to handle hacking failures
   // we're adjusting the 'raw' factor down by 1x in case we high roll.
-  const failureFactor = Math.max(1, Math.floor(1 / ns.formulas.hacking.hackChance(server, player)) - 1);
-  const rawHackThreadsRequired = 100 / ns.formulas.hacking.hackPercent(server, player);
+  const failureFactor = formulasAvailable
+    ? Math.max(1, Math.floor(1 / ns.formulas.hacking.hackChance(server, player)) - 1)
+    : 1;
+
+  const rawHackThreadsRequired = formulasAvailable
+    ? 100 / ns.formulas.hacking.hackPercent(server, player)
+    : 1 / ns.hackAnalyze(server.hostname);
+
   const hackThreads = Math.floor(rawHackThreadsRequired * failureFactor);
 
   const weaken1: Task = {
@@ -131,71 +215,22 @@ function getBatch(ns: NS, server: Server, player: Player): Task[] | null {
     action: 'g',
     target: server.hostname,
     threads: growthThreads,
-    delay: weakenTime + 1 - growTime,
+    delay: weakenTime + 10 - growTime,
   };
   const weaken2: Task = {
     action: 'w',
     target: server.hostname,
     threads: weaken2Threads,
-    delay: weakenTime + 2 - growTime,
+    delay: weakenTime + 20 - growTime,
   };
   const hack: Task = {
     action: 'h',
     target: server.hostname,
     threads: hackThreads,
-    delay: weakenTime + 3 - hackTime,
+    delay: weakenTime + 30 - hackTime,
   };
 
   return [weaken1, grow, weaken2, hack];
-}
-
-function getTargetAction(ns: NS, server: Server): Task | null {
-  const pending = runningTasks.get(server.hostname);
-
-  //TODO if we were smart, we'd forecast the result of our pending tasks and already queue the next one
-  // alas, we're not
-  if (pending?.length) {
-    return null;
-  }
-  const secCurr = ns.getServerSecurityLevel(server.hostname);
-  const secMin = ns.getServerMinSecurityLevel(server.hostname);
-  const secDelta = ns.weakenAnalyze(1);
-
-  const moneyMax = server.moneyMax ?? 1;
-  const moneyCurr = server.moneyAvailable ?? 0;
-  const currentToMaxMultiplier = Math.min(Math.max(1, moneyMax / (moneyCurr || 1)), 10); // cap out at 10xing
-
-  const growthsToMax = Math.floor(ns.growthAnalyze(server.hostname, currentToMaxMultiplier));
-  // check how often we'd need to grow to max out money
-
-  const shouldGrow = moneyCurr <= moneyMax * 0.5;
-
-  const hackTime = ns.getHackTime(server.hostname);
-  const hackDelta = moneyCurr * ns.hackAnalyze(server.hostname);
-  const maxHackThreads = Math.max(Math.floor(moneyCurr / hackDelta), 1);
-
-  if (secCurr - secDelta >= secMin + 0.03) {
-    const threads = Math.ceil((secCurr - secMin) / secDelta);
-    return {
-      target: server.hostname,
-      action: 'w',
-      threads: threads,
-    };
-  }
-
-  if (shouldGrow && growthsToMax >= 1) {
-    return {
-      target: server.hostname,
-      action: 'g',
-      threads: growthsToMax,
-    };
-  }
-
-  return {
-    target: server.hostname,
-    action: 'h',
-    threads: maxHackThreads,
-  };
 }
 
 // get a sorted list of servers that can run scripts
@@ -217,8 +252,8 @@ function getTargets(ns: NS, servers: Server[]) {
 }
 
 async function getServers(ns: NS) {
-  const servers = await crawlServers(ns, 'home', 100);
-  return servers.filter((x) => !!x) as Server[];
+  const servers = await crawlServers(ns, 'home');
+  return servers.filter((x, i, a) => !!x && a.indexOf(x) == i) as Server[];
 }
 
 const getRam = (server: Server) => server.maxRam - server.ramUsed - (HOST_RAM_BLOCKER[server.hostname] ?? 0);
@@ -238,3 +273,6 @@ function hasFormulas(ns: NS) {
     return false;
   }
 }
+
+//TODO: reimplement https://github.com/bitburner-official/bitburner-src/blob/dev/src/Hacking.ts#L60
+// to circumvent need for formulas api earlygame

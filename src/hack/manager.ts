@@ -10,9 +10,7 @@ import { NS } from '@ns';
 const SCRIPT_SLAVE = '/hack/slave.js';
 let SCRIPT_COST = 2;
 const DEPLOY = ['utils.js', SCRIPT_SLAVE];
-
-// map of hostnames to the last action executed
-let lastActions: Record<string, Task> = {};
+const MAX_THREADS = 16; // for the lulz
 
 /**
  * main script setting up the server hacking loop
@@ -68,13 +66,8 @@ export async function main(ns: NS) {
  */
 async function execute(ns: NS, servers: ServerWithEstimates[], scheduler: Scheduler) {
   for (const server of servers) {
-    // don't assign tasks to servers that have tasks pending
-    if (scheduler.getPendingTasks().find((t) => t.target === server.hostname)) {
-      continue;
-    }
     try {
       const action = getNextAction(ns, server);
-      lastActions[server.hostname] = action;
       const res = await scheduler.schedule(action);
       if (!res) {
         // no runners available. wait until we're good again
@@ -174,22 +167,21 @@ function logStatus(
           )}x)`,
       },
       {
-        header: 'task',
-        width: 16,
+        header: ' grow |  weak |  hack ',
+        width: 20,
         getter: (item) => {
-          const action = lastActions[item.hostname];
-          if (!action) {
-            return '';
-          }
-          return `${action.action}${action.threads}`;
-        },
-      },
-      {
-        header: 'dur',
-        width: 8,
-        getter: (item) => {
-          const task = tasks.find((t) => t.target === item.hostname);
-          return task ? fmt.formatDuration(task.finishesAt - Date.now()) : '';
+          const running = (tasks ?? [])
+            .filter((t) => t.target == item.hostname)
+            .reduce(
+              (acc, curr) => {
+                acc[curr.action as 'g' | 'w' | 'h'] += curr.threads;
+                return acc;
+              },
+              { g: 0, h: 0, w: 0 },
+            );
+          return `${running.g.toString().padStart(5, ' ')} | ${running.w.toString().padStart(5, ' ')} | ${running.h
+            .toString()
+            .padStart(5, ' ')}`;
         },
       },
     ],
@@ -223,12 +215,12 @@ function logStatus(
 
   ns.printf(
     `hack: %i(%s) grow: %i(%s) weaken: %i(%s)`,
-    byAction.hack?.count ?? 0,
-    fmt.formatNum(byAction.hack?.threads ?? 0),
-    byAction.grow?.count ?? 0,
-    fmt.formatNum(byAction.grow?.threads ?? 0),
-    byAction.weaken?.count ?? 0,
-    fmt.formatNum(byAction.weaken?.threads ?? 0),
+    byAction.h?.count ?? 0,
+    fmt.formatNum(byAction.h?.threads ?? 0),
+    byAction.g?.count ?? 0,
+    fmt.formatNum(byAction.g?.threads ?? 0),
+    byAction.w?.count ?? 0,
+    fmt.formatNum(byAction.w?.threads ?? 0),
   );
 }
 

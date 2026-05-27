@@ -1,9 +1,6 @@
-import { NS } from '@ns';
-import type { Server } from './domain.js';
+import { NS, Server } from '@ns';
 
-/**
- * this is needlessly async to avoid limits of the very shallow stack
- */
+// if we don't make this async, the game explodes
 export async function crawlServers(ns: NS, host: string, depth = 10): Promise<Server[]> {
   async function extend(ns: NS, host: string, parent: string, list: Server[], depth = 1) {
     const s = ns.getServer(host);
@@ -26,36 +23,4 @@ export async function crawlServers(ns: NS, host: string, depth = 10): Promise<Se
   await extend(ns, host, '', list, depth);
 
   return list;
-}
-
-export function crawlServersSync(ns: NS, startHost = 'home') {
-  var knownHosts = new Set<string>();
-  var scannedHosts = new Set<string>();
-
-  knownHosts.add(startHost);
-
-  while (scannedHosts.size < knownHosts.size) {
-    const toScan = difference(knownHosts, scannedHosts);
-    for (const server of toScan) {
-      ns.scan(server).forEach((host) => knownHosts.add(host));
-    }
-  }
-
-  return [...knownHosts].map((host) => ns.getServer(host));
-}
-
-function difference<T>(a: Set<T>, b: Set<T>): Set<T> {
-  const result = new Set<T>();
-  for (const item of a) {
-    if (!b.has(item)) {
-      result.add(item);
-    }
-  }
-  for (const item of b) {
-    if (!a.has(item)) {
-      result.add(item);
-    }
-  }
-
-  return result;
 }
