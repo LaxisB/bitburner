@@ -18,3 +18,24 @@ export function groupBy<T, R extends string | number>(list: T[], getter: (val: T
     return acc;
   }, {} as Record<R, T[]>);
 }
+
+export function queueWrite(ns: NS, queue: number, data: any) {
+  const failed = ns.writePort(queue, data);
+  return !!failed;
+}
+
+export function queueRead(ns: NS, queue: number, cb: (data: any) => void) {
+  let msg = ns.readPort(queue);
+  while (msg != 'NULL PORT DATA') {
+    cb(msg);
+    msg = ns.readPort(queue);
+  }
+}
+
+export async function queueReadAsync(ns: NS, queue: number, cb: (data: any) => Promise<unknown>) {
+  let msg = ns.readPort(queue);
+  while (msg != 'NULL PORT DATA') {
+    await cb(msg);
+    msg = ns.readPort(queue);
+  }
+}

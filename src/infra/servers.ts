@@ -1,3 +1,5 @@
+import type { LogEvent } from '@/domain';
+import { Ports } from '@/utils/constants';
 import { NS } from '@ns';
 const prefix = `NODE`;
 
@@ -28,8 +30,10 @@ export async function main(ns: NS) {
       await ns.sleep(10_000);
       continue;
     }
+    const toDelete = servers[0];
+    let deletedAThing = false;
     if (servers.length >= max) {
-      const toDelete = servers[0];
+      ns.writePort(Ports.Servers, { added: true, host: toDelete.host });
       ns.printf(
         '[%s] reached limit. deleting smallest node (ram=%s)',
         new Date().toLocaleTimeString(),
@@ -39,12 +43,21 @@ export async function main(ns: NS) {
       const res = ns.cloud.deleteServer(toDelete.host);
       if (!res) {
         ns.printf("couldn't delete...");
+        ns.writePort(Ports.Servers, { added: false, host: toDelete.host });
         await ns.sleep(10_000);
         continue;
       }
+      deletedAThing = true;
     }
-    ns.printf('[%s] bought a %s box', new Date().toLocaleTimeString(), ns.format.ram(2 ** pow));
-    ns.cloud.purchaseServer(prefix, targetRam);
+    ns.writePort(Ports.Metrics, {
+      type: 'log',
+      message: `${deletedAThing ? `Upgraded from a ${ns.format.ram(toDelete.ram)} to` : 'Bought a'} a ${ns.format.ram(
+        2 ** pow,
+      )} Server`,
+    } satisfies LogEvent);
+    const newServer = ns.cloud.purchaseServer(prefix, targetRam);
+    ns.writePort(Ports.Servers, { added: false, host: toDelete.host });
+    ns.writePort(Ports.Servers, { added: false, host: newServer });
     await ns.sleep(5_000);
   }
 }

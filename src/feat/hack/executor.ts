@@ -1,8 +1,10 @@
+import type { ExecStartMetric, ExecEndMetric } from '@/domain';
 import { NS } from '@ns';
 
 export interface SlaveArgs {
   threads: number;
   delay: number;
+  duration: number;
   action: string;
   runner: string;
   target: string;
@@ -16,7 +18,8 @@ export async function main(ns: NS) {
   const args: SlaveArgs = ns.flags([
     ['threads', 1],
     ['delay', 0],
-    ['action', 'grow'],
+    ['duration', 0],
+    ['action', ''],
     ['runner', ''],
     ['target', ''],
   ]) as any;
@@ -30,15 +33,37 @@ export async function main(ns: NS) {
 
   ns.ramOverride(2);
 
+  ns.writePort(2, {
+    type: 'exec_start',
+    pid: ns.pid,
+    func: args.action,
+    threads: args.threads,
+    duration: args.duration,
+    delay: args.delay,
+    target: args.target,
+    runner: args.runner,
+  } satisfies ExecStartMetric);
+
   switch (args.action) {
-    case 'w':
-      return await ns.weaken(args.target, { threads: args.threads, additionalMsec: args.delay });
-    case 'g':
-      return await ns.grow(args.target, { threads: args.threads, additionalMsec: args.delay });
-    case 'h':
-      return await ns.hack(args.target, { threads: args.threads, additionalMsec: args.delay });
-    default:
-      ns.printf('unknown cmd: %s', args.action);
-      return;
+    case 'hack':
+      await ns.hack(args.target, { threads: args.threads, additionalMsec: args.delay });
+      break;
+    case 'grow':
+      await ns.grow(args.target, { threads: args.threads, additionalMsec: args.delay });
+      break;
+    case 'weaken':
+      await ns.weaken(args.target, { threads: args.threads, additionalMsec: args.delay });
+      break;
   }
+
+  ns.writePort(2, {
+    type: 'exec_end',
+    pid: ns.pid,
+    func: args.action,
+    threads: args.threads,
+    duration: args.duration,
+    delay: args.delay,
+    target: args.target,
+    runner: args.runner,
+  } satisfies ExecEndMetric);
 }

@@ -1,7 +1,8 @@
 /* eslint-disable no-empty */
 import { crawlServers } from '../utils/servers';
-import { HOME } from '../utils/constants';
-import { NS } from '@ns';
+import { HOME, Ports } from '../utils/constants';
+import type { NS } from '@ns';
+import type { LogEvent } from '@/domain';
 
 /**
  * automatically gains root on all possible targets
@@ -35,8 +36,9 @@ export async function main(ns: NS) {
         ns.nuke(host);
       } catch (e) {}
 
-      if (server.hasAdminRights) {
-        ns.printf(`pwned ${host}`);
+      const s = ns.getServer(server.hostname);
+      if (s.hasAdminRights) {
+        ns.writePort(Ports.Metrics, { type: 'log', message: `pwned ${host}` } satisfies LogEvent);
       }
     }
 

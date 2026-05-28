@@ -1,6 +1,9 @@
 const numFormatter = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 3, maximumFractionDigits: 5 });
 
 export function formatDuration(millis: number) {
+  if (!millis) {
+    return '0:00:00';
+  }
   const time = Math.floor(millis / 1000);
   const secs = time % 60;
   let mins = Math.floor(time / 60);

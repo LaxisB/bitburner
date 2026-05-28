@@ -6,8 +6,9 @@ export interface ExtendedServerStats extends Server {
 
 export interface Task {
   target: string;
-  action: string;
+  action: 'weaken' | 'grow' | 'hack';
   threads: number;
+  duration: number;
   delay?: number;
 }
 
