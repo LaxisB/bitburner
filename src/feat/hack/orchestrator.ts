@@ -1,3 +1,4 @@
+import { Ports } from '@/utils/constants';
 import { Server } from '@/utils/domain';
 import { crawlServers } from '@/utils/servers';
 import { NS, Player } from '@ns';
@@ -12,12 +13,13 @@ const HOST_RAM_BLOCKER: Record<string, number> = {
 
 const runningTasks = new Map<string, ScheduledTask[]>();
 
+//TODO: clean this mess called script up
 export async function main(ns: NS) {
   ns.disableLog('ALL');
   ns.ui.openTail();
   let servers = await getServers(ns);
 
-  ns.printf('distributing slave script');
+  ns.printf('distributing payload');
   for (const server of servers) {
     ns.scp(EXECUTOR_SCRIPT, server!.hostname, 'home');
   }
@@ -35,17 +37,23 @@ export async function main(ns: NS) {
     const player = ns.getPlayer();
     for (const target of targets) {
       const batch = getBatch(ns, target, player);
-      if (!batch) {
-        break;
+      if (!batch?.length) {
+        continue;
       }
       const success = scheduleBatch(ns, batch, runners);
       if (!success) {
-        ns.printf('failed scheduling batch for %s', batch[0].target);
-        return;
+        // ns.printf(
+        //   'batch too large: %i threads targeted at %s',
+        //   batch.reduce((a, c) => a + c.threads, 0),
+        //   batch[0].target,
+        // );
         break;
-      } else {
-        ns.printf('scheduled batch for %s', batch[0].target);
       }
+      ns.printf(
+        'scheduled batch for %s (%i threads)',
+        batch[0].target,
+        batch.reduce((a, c) => a + c.threads, 0),
+      );
     }
 
     await ns.sleep(1000);
@@ -55,32 +63,36 @@ export async function main(ns: NS) {
 function scheduleBatch(ns: NS, tasks: Task[], runners: Server[]): boolean {
   const [w, g, w2, h] = tasks;
   let pids: number[] = [];
-  const wPids = schedule(ns, w, runners);
-  pids = pids.concat(wPids);
-  if (!wPids.length) {
-    ns.printf('failed to schedule %j', w);
-    return false;
+  if (w?.threads) {
+    const wPids = schedule(ns, w, runners);
+    pids = pids.concat(wPids);
+    if (!wPids.length) {
+      return false;
+    }
   }
-  const gPids = schedule(ns, g, runners);
-  pids = pids.concat(gPids);
-  if (!gPids.length) {
-    ns.printf('failed to schedule %j', g);
-    pids.forEach((pid) => ns.kill(pid));
-    return false;
+  if (g?.threads) {
+    const gPids = schedule(ns, g, runners);
+    pids = pids.concat(gPids);
+    if (!gPids.length) {
+      pids.forEach((pid) => ns.kill(pid));
+      return false;
+    }
   }
-  const w2Pids = schedule(ns, w2, runners);
-  pids = pids.concat(w2Pids);
-  if (!w2Pids.length) {
-    ns.printf('failed to schedule %j', w2);
-    pids.forEach((pid) => ns.kill(pid));
-    return false;
+  if (w2?.threads) {
+    const w2Pids = schedule(ns, w2, runners);
+    pids = pids.concat(w2Pids);
+    if (!w2Pids.length) {
+      pids.forEach((pid) => ns.kill(pid));
+      return false;
+    }
   }
-  const hPids = schedule(ns, h, runners);
-  pids = pids.concat(hPids);
-  if (!hPids.length) {
-    ns.printf('failed to schedule %j', h);
-    pids.forEach((pid) => ns.kill(pid));
-    return false;
+  if (h?.threads) {
+    const hPids = schedule(ns, h, runners);
+    pids = pids.concat(hPids);
+    if (!hPids.length) {
+      pids.forEach((pid) => ns.kill(pid));
+      return false;
+    }
   }
   return true;
 }
@@ -91,10 +103,6 @@ function schedule(ns: NS, task: Task, runners: Server[]): number[] {
     return [];
   }
 
-  runners
-    .filter((x) => x.hasAdminRights)
-    .forEach((x) => ns.printf('%s: %i', x.hostname.padEnd(20, ' '), x.maxRam - x.ramUsed));
-
   //TODO: don't naively cap threads to fit on one machine, but rather split the task over multiple machines
   //to get the wanted result
   const requestedThreads = Math.floor(task.threads);
@@ -103,7 +111,7 @@ function schedule(ns: NS, task: Task, runners: Server[]): number[] {
   let pids = [];
 
   while (scheduledThreads < requestedThreads) {
-    const runner = runners.find((x) => x.ramUsed + SCRIPT_COST < x.maxRam)!;
+    let runner = runners.find((x) => x.ramUsed + SCRIPT_COST < x.maxRam)!;
     if (!runner) {
       ns.printf('no runner available');
       pids.forEach((pid) => ns.kill(pid));
@@ -111,7 +119,6 @@ function schedule(ns: NS, task: Task, runners: Server[]): number[] {
     }
     const possibleThreads = Math.floor(getRam(runner) / SCRIPT_COST);
     if (possibleThreads < 1) {
-      ns.printf('ran out of runners');
       pids.forEach((pid) => ns.kill(pid));
       return [];
     }
@@ -123,19 +130,19 @@ function schedule(ns: NS, task: Task, runners: Server[]): number[] {
       threads,
       pid: -1,
     };
-    const pid = executeTask(ns, scheduled);
+    let pid = executeTask(ns, scheduled);
     scheduled.pid = pid;
     if (pid) {
       // mutate runner state to update memory
       // we are getting fresh data the next time we run, so this isn't permanent
-      runner.ramUsed += SCRIPT_COST * scheduled.threads;
+      const updated = ns.getServer(runner.hostname);
+      Object.assign(runner, { ramUsed: updated.ramUsed });
+
       const running = runningTasks.get(task.target) ?? [];
       running.push(scheduled);
       runningTasks.set(task.target, running); // store after mutation in case .get() returned null
-      ns.printf('%s -- %s x%i -> %s', scheduled.runner, scheduled.action, scheduled.threads, scheduled.target);
       pids.push(pid);
       scheduledThreads += threads;
-      ns.printf('scheduled %i of %i threads', scheduledThreads, requestedThreads);
     } else {
       // kill each partial task if we couldn't schedule it fully
       pids.forEach((pid) => ns.kill(pid));
@@ -253,7 +260,8 @@ function getTargets(ns: NS, servers: Server[]) {
 
 async function getServers(ns: NS) {
   const servers = await crawlServers(ns, 'home');
-  return servers.filter((x, i, a) => !!x && a.indexOf(x) == i) as Server[];
+  const byHostname: Record<string, Server> = servers.reduce((acc, curr) => ({ ...acc, [curr.hostname]: curr }), {});
+  return Object.values(byHostname);
 }
 
 const getRam = (server: Server) => server.maxRam - server.ramUsed - (HOST_RAM_BLOCKER[server.hostname] ?? 0);
@@ -262,7 +270,17 @@ function executeTask(ns: NS, task: ScheduledTask) {
   const args = ['threads', 'delay', 'action', 'target']
     .filter((key) => !!(task as any)[key])
     .flatMap((key) => [`--${key}`, (task as Record<string, any>)[key]]);
-  return ns.exec(EXECUTOR_SCRIPT, task.runner, task.threads, ...(args as any));
+  const pid = ns.exec(EXECUTOR_SCRIPT, task.runner, task.threads, ...(args as any));
+  ns.writePort(Ports.Metrics, {
+    type: `hacking.${task.action}`,
+    time: Date.now(),
+    threads: task.threads,
+    delay: task.delay,
+    runner: task.runner,
+    target: task.target,
+    pid,
+  });
+  return pid;
 }
 
 function hasFormulas(ns: NS) {
@@ -273,6 +291,3 @@ function hasFormulas(ns: NS) {
     return false;
   }
 }
-
-//TODO: reimplement https://github.com/bitburner-official/bitburner-src/blob/dev/src/Hacking.ts#L60
-// to circumvent need for formulas api earlygame

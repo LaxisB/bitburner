@@ -10,7 +10,8 @@ import { NS } from '@ns';
 const SCRIPT_SLAVE = '/hack/slave.js';
 let SCRIPT_COST = 2;
 const DEPLOY = ['utils.js', SCRIPT_SLAVE];
-const MAX_THREADS = 16; // for the lulz
+
+const serverEstimates = new Map<string, Server>();
 
 /**
  * main script setting up the server hacking loop
@@ -39,6 +40,7 @@ export async function main(ns: NS) {
 
   for (const server of servers) {
     ns.scp(DEPLOY, server.hostname, HOME);
+    serverEstimates.set(server.hostname, server);
   }
 
   let count = 1;
@@ -66,8 +68,16 @@ export async function main(ns: NS) {
  */
 async function execute(ns: NS, servers: ServerWithEstimates[], scheduler: Scheduler) {
   for (const server of servers) {
+    const pendingTasks = scheduler.getPendingTasks().filter((x) => x.target == server.hostname);
+    if (pendingTasks.length > 3) {
+      continue;
+    }
     try {
       const action = getNextAction(ns, server);
+      //  don't run duplicate tasks
+      if (pendingTasks.find((x) => x.action === action.action)) {
+        continue;
+      }
       const res = await scheduler.schedule(action);
       if (!res) {
         // no runners available. wait until we're good again
@@ -87,12 +97,12 @@ async function execute(ns: NS, servers: ServerWithEstimates[], scheduler: Schedu
  * @returns an action the scheduler should handle
  */
 function getNextAction(ns: NS, server: ServerWithEstimates): Task {
-  const secCurr = server.security.current;
+  const secCurr = ns.getServerSecurityLevel(server.hostname);
   const secMin = server.security.min;
   const secDelta = ns.weakenAnalyze(1);
 
   const moneyMax = server.money.max;
-  const moneyCurr = server.money.current;
+  const moneyCurr = ns.getServer(server.hostname).moneyAvailable ?? 0;
   const moneyMissing = moneyMax - moneyCurr;
   const currentToMaxMultiplier = Math.min((moneyCurr + moneyMissing) / (moneyCurr || 1), 10); // cap out at 10xing
 
