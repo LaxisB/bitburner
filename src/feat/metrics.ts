@@ -1,8 +1,9 @@
 import type { Event, ExecStartEvent } from '@/domain';
 import { Ports } from '@/lib/constants';
 import { formatDuration } from '@/lib/format';
+import { crawlServers } from '@/lib/servers';
 import { queueRead } from '@/lib/utils';
-import type { NS } from '@ns';
+import type { NS, Server } from '@ns';
 
 const tasks = new Map<string, ExecStartEvent & { time: number }>();
 let events = ['', '', '', '', ''] as string[];
@@ -15,7 +16,8 @@ export async function main(ns: NS) {
 	let lastRender = 0;
 	while (true) {
 		if (updateState(ns) || Date.now() - lastRender > 2000) {
-			logState(ns);
+			const servers = await crawlServers(ns, 'home');
+			logState(ns, servers);
 			lastRender = Date.now();
 		}
 		await ns.sleep(50);
@@ -53,9 +55,44 @@ function updateState(ns: NS) {
 	return count > 0;
 }
 
-function logState(ns: NS) {
-	let threads = 0;
+function logState(ns: NS, servers: Server[]) {
 	ns.clearLog();
+	const hackLevel = ns.getHackingLevel();
+
+	// --- SERVERS ---
+	const serverRows = servers
+		.filter(
+			(s) =>
+				s &&
+				!s.purchasedByPlayer &&
+				s.hasAdminRights &&
+				ns.getServerRequiredHackingLevel(s.hostname) <= hackLevel &&
+				(s.moneyMax ?? 0) > 0,
+		)
+		.map((s) => {
+			const fresh = ns.getServer(s.hostname);
+			const money = fresh.moneyAvailable ?? 0;
+			const moneyMax = fresh.moneyMax ?? 1;
+			return {
+				hostname: fresh.hostname,
+				money,
+				moneyMax,
+				moneyPct: (money / moneyMax) * 100,
+				sec: fresh.hackDifficulty ?? 0,
+				minSec: fresh.minDifficulty ?? 0,
+			};
+		})
+		.sort((a, b) => b.moneyMax - a.moneyMax);
+
+	ns.printf('--- SERVERS ---');
+	ns.printf('%-20s %10s %6s %6s %6s', 'Server', 'Money', '%', 'Sec', 'Min');
+	ns.printf('%-20s %10s %6s %6s %6s', '--------------------', '----------', '------', '------', '------');
+	for (const r of serverRows) {
+		ns.printf('%-20s %10s %5.1f%% %6.2f %6.2f', r.hostname, ns.format.number(r.money), r.moneyPct, r.sec, r.minSec);
+	}
+
+	// --- TASKS ---
+	let threads = 0;
 	const taskTree: Record<string, { next: 0; hack: number; grow: number; weaken: number }> = {};
 	tasks.forEach((t) => {
 		threads += t.threads;
@@ -67,6 +104,7 @@ function logState(ns: NS) {
 		taskTree[t.target] = obj;
 	});
 	const hosts = Object.keys(taskTree).sort();
+	ns.printf('\n--- TASKS ---');
 	ns.printf('Tasks: %i\tThreads: %i', tasks.size, threads);
 	hosts.forEach((h) => {
 		const stats = taskTree[h];
@@ -78,6 +116,8 @@ function logState(ns: NS) {
 				.padStart(4, ' ')})`,
 		);
 	});
-	ns.print('\n');
+
+	// --- LOGS ---
+	ns.print('\n--- LOGS ---');
 	events.forEach((e) => ns.print(e));
 }
