@@ -72,7 +72,7 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 		action: 'grow',
 		target: server.hostname,
 		threads: growthThreads,
-		delay: weakenTime + 10 - growTime,
+		delay: weakenTime + 100 - growTime,
 		duration: growTime,
 	};
 	const weaken2: Task = {
@@ -80,14 +80,14 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 		label: 'weaken 2',
 		target: server.hostname,
 		threads: growthThreads > 0 ? weaken2Threads : 0,
-		delay: weakenTime + 20 - growTime,
+		delay: weakenTime + 200 - growTime,
 		duration: weakenTime,
 	};
 	const hack: Task = {
 		action: 'hack',
 		target: server.hostname,
 		threads: hackThreads,
-		delay: weakenTime + 30 - hackTime,
+		delay: weakenTime + 300 - hackTime,
 		duration: hackTime,
 	};
 
@@ -106,9 +106,7 @@ export function scoreTarget(ns: NS, server: Server, player: Player): number {
 	const hackPercent = formulasAvailable
 		? ns.formulas.hacking.hackPercent(peakServer, player)
 		: ns.hackAnalyze(hostname);
-	const hackTime = formulasAvailable
-		? ns.formulas.hacking.hackTime(peakServer, player)
-		: ns.getHackTime(hostname);
+	const hackTime = formulasAvailable ? ns.formulas.hacking.hackTime(peakServer, player) : ns.getHackTime(hostname);
 	const hackChance = formulasAvailable
 		? ns.formulas.hacking.hackChance(peakServer, player)
 		: ns.hackAnalyzeChance(hostname);
