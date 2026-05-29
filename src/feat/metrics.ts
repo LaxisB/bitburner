@@ -6,18 +6,25 @@ import { queueRead } from '@/lib/utils';
 import type { NS, Server } from '@ns';
 
 const tasks = new Map<string, ExecStartEvent & { time: number }>();
+const recentByTarget = new Map<string, string>();
 let events = ['', '', '', '', ''] as string[];
 
+function taskChar(func: string): string {
+	if (func === 'weaken') return 'w';
+	if (func === 'grow') return 'g';
+	if (func === 'hack') return 'h';
+	return '?';
+}
+
 const FONT_SIZE = 16;
-const CHAR_WIDTH = 47;
-const CHAR_HEIGHT = 45;
+const CHAR_WIDTH = 53;
+const CHAR_HEIGHT = 50;
 
 export async function main(ns: NS) {
-	tasks.clear();
 	ns.disableLog('ALL');
 	ns.clearLog();
 	ns.ui.openTail();
-	ns.ui.setTailTitle('Server Metrics');
+	ns.ui.setTailTitle('Dashboard');
 	ns.ui.resizeTail(CHAR_WIDTH * FONT_SIZE, CHAR_HEIGHT * FONT_SIZE);
 	ns.ui.setTailFontSize(FONT_SIZE);
 	let lastRender = 0;
@@ -41,9 +48,13 @@ function updateState(ns: NS) {
 			case 'exec_start':
 				tasks.set(msg.pid.toString(), { ...msg, time: Date.now() });
 				break;
-			case 'exec_end':
+			case 'exec_end': {
 				tasks.delete(msg.pid.toString());
+				const prev = recentByTarget.get(msg.target) ?? '';
+				const char = taskChar(msg.func);
+				if (prev.at(-1) !== char) recentByTarget.set(msg.target, (prev + char).slice(-10));
 				break;
+			}
 			case 'log':
 				events.push(msg.message);
 				break;
@@ -90,6 +101,7 @@ function logState(ns: NS, servers: Server[]) {
 				ns.getServerRequiredHackingLevel(s.hostname) <= hackLevel &&
 				(s.moneyMax ?? 0) > 0,
 		)
+		.sort((a, b) => a.hostname.localeCompare(b.hostname))
 		.map((s) => {
 			const fresh = ns.getServer(s.hostname);
 			const money = fresh.moneyAvailable ?? 0;
@@ -106,14 +118,14 @@ function logState(ns: NS, servers: Server[]) {
 				weaken: task?.weaken ?? 0,
 				grow: task?.grow ?? 0,
 				hack: task?.hack ?? 0,
+				history: recentByTarget.get(fresh.hostname) ?? '',
 			};
-		})
-		.sort((a, b) => b.moneyMax - a.moneyMax);
+		});
 
 	ns.printf('Script Income: %-10s\tScript Exp: %-10s', ns.format.number(scriptIncome), ns.format.number(scriptExp));
-	ns.printf('%-20s %10s %6s %6s %10s %6s %6s %6s', 'Server', 'Money', '%', 'Sec↓', 'Duration', 'W', 'G', 'H');
+	ns.printf('%-20s %10s %6s %6s %10s %6s %6s %6s %10s', 'Server', 'Money', '%', 'Sec↓', 'Next', 'W', 'G', 'H', 'Hist');
 	ns.printf(
-		'%-20s %10s %6s %6s %10s %4s %4s %4s',
+		'%-20s %10s %6s %6s %10s %4s %4s %4s %10s',
 		'--------------------',
 		'----------',
 		'------',
@@ -122,10 +134,11 @@ function logState(ns: NS, servers: Server[]) {
 		'------',
 		'------',
 		'------',
+		'----------',
 	);
 	for (const r of serverRows) {
 		ns.printf(
-			'%-20s %10s %5.1f%% %6.2f %10s %6i %6i %6i',
+			'%-20s %10s %5.1f%% %6.2f %10s %6i %6i %6i %10s',
 			r.hostname,
 			ns.format.number(r.money),
 			r.moneyPct,
@@ -134,6 +147,7 @@ function logState(ns: NS, servers: Server[]) {
 			r.weaken,
 			r.grow,
 			r.hack,
+			r.history,
 		);
 	}
 
