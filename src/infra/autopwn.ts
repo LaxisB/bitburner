@@ -47,7 +47,7 @@ export async function main(ns: NS) {
 		if (serverspwned.length) {
 			ns.writePort(Ports.Metrics, {
 				type: 'log',
-				message: `pwned ${serverspwned.join(',').slice(0, 50)}... new servers`,
+				message: `pwned ${serverspwned.join(',').slice(0, 50)}...`,
 			} satisfies LogEvent);
 		}
 
