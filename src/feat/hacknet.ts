@@ -33,14 +33,14 @@ export async function main(ns: NS) {
 		}
 
 		if (!bought) {
-			// Priority 2-4: level → RAM → core, first node that has room
-			outer: for (let i = 0; i < ns.hacknet.numNodes(); i++) {
-				for (const [getCost, upgrade] of [
-					[() => ns.hacknet.getLevelUpgradeCost(i, 1), () => ns.hacknet.upgradeLevel(i)],
-					[() => ns.hacknet.getRamUpgradeCost(i, 1), () => ns.hacknet.upgradeRam(i)],
-					[() => ns.hacknet.getCoreUpgradeCost(i, 1), () => ns.hacknet.upgradeCore(i)],
-				] as [() => number, () => boolean][]) {
-					const cost = getCost();
+			// Priority 2-4: level all → RAM all → core all
+			outer: for (const getUpgrade of [
+				(i: number) => [ns.hacknet.getLevelUpgradeCost(i, 1), () => ns.hacknet.upgradeLevel(i)] as const,
+				(i: number) => [ns.hacknet.getRamUpgradeCost(i, 1), () => ns.hacknet.upgradeRam(i)] as const,
+				(i: number) => [ns.hacknet.getCoreUpgradeCost(i, 1), () => ns.hacknet.upgradeCore(i)] as const,
+			]) {
+				for (let i = 0; i < ns.hacknet.numNodes(); i++) {
+					const [cost, upgrade] = getUpgrade(i);
 					// biome-ignore lint: Infinity is what the functions return
 					if (cost === Infinity) continue;
 					await waitForROI();
