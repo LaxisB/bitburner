@@ -1,4 +1,4 @@
-import type { ExecStartMetric, ExecEndMetric } from '@/domain';
+import type { ExecStartEvent, ExecEndEvent } from '@/domain';
 import { NS } from '@ns';
 
 export interface SlaveArgs {
@@ -42,7 +42,7 @@ export async function main(ns: NS) {
     delay: args.delay,
     target: args.target,
     runner: args.runner,
-  } satisfies ExecStartMetric);
+  } satisfies ExecStartEvent);
 
   switch (args.action) {
     case 'hack':
@@ -65,5 +65,5 @@ export async function main(ns: NS) {
     delay: args.delay,
     target: args.target,
     runner: args.runner,
-  } satisfies ExecEndMetric);
+  } satisfies ExecEndEvent);
 }

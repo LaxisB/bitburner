@@ -18,6 +18,7 @@ const runningTasks = new Map<string, ScheduledTask[]>();
 //TODO: clean this mess called script up
 export async function main(ns: NS) {
   ns.disableLog('ALL');
+  ns.ui.openTail();
   let servers = await getServers(ns);
 
   ns.printf('distributing payload');
@@ -41,48 +42,58 @@ export async function main(ns: NS) {
     const ramTotal = runners.reduce((a, c) => (a += c.maxRam), 0);
     const threadsTotal = Math.floor(ramTotal / SCRIPT_COST);
 
-    //TODO: calculate all batches and start the largest available one
-    // if we just check the 'best' target, we'll be stuck in a quasi-permanent weaken loop
-    for (const target of targets) {
-      const ramCurrent = runners.reduce((a, c) => (a += c.maxRam - c.ramUsed), 0);
+    const targetBatches = targets.map((target) => {
+      const batch = getBatch(ns, target, player);
+      const threads = batch?.reduce((a, c) => a + c.threads, 0) ?? 0;
+      return { target, batch, threads };
+    });
+
+    // Schedule the largest possible batch; weaken the next-bigger target we skipped
+    let firstBatchIndex = -1;
+
+    for (let i = 0; i < targetBatches.length; i++) {
+      const { target, batch, threads } = targetBatches[i];
+      const ramCurrent = runners.reduce((a, c) => (a += Math.max(0, getRam(c))), 0);
       const maxThreads = Math.floor(ramCurrent / SCRIPT_COST);
 
-      const batch = getBatch(ns, target, player);
-      const totalBatchThreads = batch?.reduce((a, c) => (a += c.threads), 0) ?? 0;
-
-      // if we want to schedule a batch that's larger than our total capacity, dont do it
-      // just weaken the top target instead.
-      // if weaken would do nothing, continue to next target
-      const weakenTask = getWeaken(ns, target);
-      if (!batch?.length || totalBatchThreads > maxThreads) {
-        batch?.length &&
-          ns.printf(
-            'Batch not scheduled. requested/available/total = %i / %i / %i',
-            totalBatchThreads,
-            maxThreads,
-            threadsTotal,
-          );
-        const pid = schedule(ns, weakenTask, runners, true);
-        if (!pid?.length) {
-          // if we couldn't even schedule 1 thread, there's nothing to do
-          break;
-        }
-        await ns.sleep(100);
+      if (!batch?.length || threads > maxThreads) {
         continue;
       }
 
       const success = scheduleBatch(ns, batch, runners);
       if (!success) {
-        // we failed scheduling the batch:
-        // this means that our ram estimates are off. stop here
+        // RAM estimates are off, stop scheduling
         break;
       }
-      ns.printf(
-        'scheduled batch for %s (%i threads)',
-        batch[0].target,
-        batch.reduce((a, c) => a + c.threads, 0),
-      );
+
+      ns.printf('scheduled batch for %s (%i threads)', target.hostname, threads);
       await ns.sleep(100);
+    }
+
+    // No full batch scheduled — use partial batch to prep or generate income
+    if (firstBatchIndex === -1) {
+      for (const { target } of targetBatches) {
+        const ramCurrent = runners.reduce((a, c) => (a += Math.max(0, getRam(c))), 0);
+        const maxThreads = Math.floor(ramCurrent / SCRIPT_COST);
+        const partial = getPartialBatch(ns, target, player, maxThreads);
+        if (!partial?.length) continue;
+        const partialThreads = partial.reduce((a, c) => a + c.threads, 0);
+        ns.printf(
+          'partial[%s] %s available=%i total=%i tasks: %s',
+          partial.map((t) => t.action).join('+'),
+          target.hostname,
+          maxThreads,
+          partialThreads,
+          partial.map((t) => `${t.action}x${t.threads}`).join(' '),
+        );
+        const success = scheduleBatch(ns, partial, runners);
+        if (!success) {
+          ns.printf('partial FAILED for %s', target.hostname);
+          break;
+        }
+        ns.printf('partial ok for %s', target.hostname);
+        break;
+      }
     }
 
     await ns.sleep(1000);
@@ -90,56 +101,31 @@ export async function main(ns: NS) {
 }
 
 function scheduleBatch(ns: NS, tasks: Task[], runners: Server[]): boolean {
-  const [w, g, w2, h] = tasks;
   let pids: number[] = [];
-  if (w?.threads) {
-    const wPids = schedule(ns, w, runners);
-    pids = pids.concat(wPids);
-    if (!wPids.length) {
-      return false;
-    }
-  }
-  if (g?.threads) {
-    const gPids = schedule(ns, g, runners);
-    pids = pids.concat(gPids);
-    if (!gPids.length) {
+  for (const task of tasks) {
+    if (!task.threads) continue;
+    const taskPids = scheduleTask(ns, task, runners);
+    if (!taskPids.length) {
       pids.forEach((pid) => ns.kill(pid));
       return false;
     }
-  }
-  if (w2?.threads) {
-    const w2Pids = schedule(ns, w2, runners);
-    pids = pids.concat(w2Pids);
-    if (!w2Pids.length) {
-      pids.forEach((pid) => ns.kill(pid));
-      return false;
-    }
-  }
-  if (h?.threads) {
-    const hPids = schedule(ns, h, runners);
-    pids = pids.concat(hPids);
-    if (!hPids.length) {
-      pids.forEach((pid) => ns.kill(pid));
-      return false;
-    }
+    pids = pids.concat(taskPids);
   }
   return true;
 }
 
-function schedule(ns: NS, task: Task, runners: Server[], reduceThreads = false): number[] {
+function scheduleTask(ns: NS, task: Task, runners: Server[], reduceThreads = false): number[] {
   if (!runners.length || task.threads == 0) {
     return [];
   }
 
-  //TODO: don't naively cap threads to fit on one machine, but rather split the task over multiple machines
-  //to get the wanted result
   const requestedThreads = Math.floor(task.threads);
 
   let scheduledThreads = 0;
   let pids = [];
 
   while (scheduledThreads < requestedThreads) {
-    let runner = runners.find((x) => x.ramUsed + SCRIPT_COST < x.maxRam)!;
+    let runner = runners.find((x) => getRam(x) >= SCRIPT_COST)!;
     if (!runner) {
       pids.forEach((pid) => ns.kill(pid));
       return [];
@@ -285,6 +271,44 @@ function getBatch(ns: NS, server: Server, player: Player): Task[] | null {
   return [weaken1, grow, weaken2, hack];
 }
 
+function getPartialBatch(ns: NS, server: Server, player: Player, maxThreads: number): Task[] | null {
+  if (runningTasks.get(server.hostname)?.length) return null;
+  if (maxThreads < 1) return null;
+
+  const formulasAvailable = hasFormulas(ns);
+  const hackTime = formulasAvailable ? ns.formulas.hacking.hackTime(server, player) : ns.getHackTime(server.hostname);
+  const weakenTime = formulasAvailable ? ns.formulas.hacking.weakenTime(server, player) : hackTime * 4;
+  const growTime = formulasAvailable ? ns.formulas.hacking.growTime(server, player) : hackTime * 3.2;
+
+  // Tier 1: security elevated
+  const secCurr = ns.getServerSecurityLevel(server.hostname);
+  const secMin = ns.getServerMinSecurityLevel(server.hostname);
+  if (secCurr > secMin) {
+    const w = getWeaken(ns, server);
+    return [{ ...w, threads: Math.min(w.threads, maxThreads) }];
+  }
+
+  // Tier 2: money below max: row + counter weaken
+  if ((server.moneyAvailable ?? 0) < (server.moneyMax ?? 1)) {
+    const growRatio = ns.growthAnalyzeSecurity(1) / ns.weakenAnalyze(1);
+    const growThreads = Math.max(1, Math.floor(maxThreads / (1 + growRatio)));
+    const weakenThreads = Math.ceil(growThreads * growRatio);
+    return [
+      { action: 'grow', target: server.hostname, threads: growThreads, duration: growTime },
+      { action: 'weaken', target: server.hostname, threads: weakenThreads, duration: weakenTime },
+    ];
+  }
+
+  // Tier 3: server ready: hack + counter weaken (income!)
+  const hackRatio = ns.hackAnalyzeSecurity(1) / ns.weakenAnalyze(1);
+  const hackThreads = Math.max(1, Math.floor(maxThreads / (1 + hackRatio)));
+  const weakenThreads = Math.ceil(hackThreads * hackRatio);
+  return [
+    { action: 'hack', target: server.hostname, threads: hackThreads, duration: hackTime },
+    { action: 'weaken', target: server.hostname, threads: weakenThreads, duration: weakenTime },
+  ];
+}
+
 // get a sorted list of servers that can run scripts
 function getRunners(servers: Server[]) {
   return servers.filter((x) => x.hasAdminRights).sort((a, b) => getRam(b) - getRam(a));
@@ -330,12 +354,13 @@ function hasFormulas(ns: NS) {
 function updateBlacklist(ns: NS) {
   queueRead(ns, Ports.Servers, (msg) => {
     const { added, host } = msg;
+    ns.printf('Blacklist change %j', msg);
     if (added) {
       BLACKLIST.add(host);
-      ns.printf('+BLACKLIST%s', host);
+      ns.printf('+BLACKLIST %s', host);
     } else {
       BLACKLIST.delete(host);
-      ns.printf('-BLACKLIST%s', host);
+      ns.printf('-BLACKLIST %s', host);
     }
   });
 }

@@ -15,7 +15,7 @@ export async function main(ns: NS) {
 
     const servers = ns.cloud
       .getServerNames()
-      .map((server) => ({ host: server, ram: ns.getServerMaxRam(server) }))
+      .map((server) => ({ hostname: server, ram: ns.getServerMaxRam(server) }))
       .sort((a, b) => a.ram - b.ram);
 
     // get max pow
@@ -32,34 +32,33 @@ export async function main(ns: NS) {
     }
     const toDelete = servers[0];
     let deletedAThing = false;
-    if (servers.length >= max) {
-      ns.writePort(Ports.Servers, { added: true, host: toDelete.host });
-      ns.printf(
-        '[%s] reached limit. deleting smallest node (ram=%s)',
-        new Date().toLocaleTimeString(),
-        ns.format.ram(toDelete.ram),
-      );
-      ns.killall(toDelete.host);
-      const res = ns.cloud.deleteServer(toDelete.host);
+    if (servers.length >= max && toDelete) {
+      ns.writePort(Ports.Servers, { added: true, host: toDelete.hostname });
+      ns.killall(toDelete.hostname);
+      const res = ns.cloud.deleteServer(toDelete.hostname);
       if (!res) {
         ns.printf("couldn't delete...");
-        ns.writePort(Ports.Servers, { added: false, host: toDelete.host });
+        ns.writePort(Ports.Servers, { added: false, host: toDelete.hostname });
         await ns.sleep(10_000);
         continue;
       }
       deletedAThing = true;
     }
-    ns.writePort(Ports.Metrics, {
-      type: 'log',
-      message: `${deletedAThing ? `Upgraded from a ${ns.format.ram(toDelete.ram)} to` : 'Bought a'} a ${ns.format.ram(
-        2 ** pow,
-      )} Server`,
-    } satisfies LogEvent);
+
     const newServer = ns.cloud.purchaseServer(prefix, targetRam);
     if (toDelete) {
-      ns.writePort(Ports.Servers, { added: false, host: toDelete.host });
+      ns.writePort(Ports.Servers, { added: false, host: toDelete.hostname });
     }
-    ns.writePort(Ports.Servers, { added: false, host: newServer });
+    if (newServer) {
+      ns.writePort(Ports.Servers, { added: false, host: newServer });
+
+      ns.writePort(Ports.Metrics, {
+        type: 'log',
+        message: `${deletedAThing ? `Upgraded from a ${ns.format.ram(toDelete.ram)} to` : 'Bought a'} a ${ns.format.ram(
+          2 ** pow,
+        )} Server`,
+      } satisfies LogEvent);
+    }
     await ns.sleep(5_000);
   }
 }
