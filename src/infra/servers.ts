@@ -56,7 +56,9 @@ export async function main(ns: NS) {
       )} Server`,
     } satisfies LogEvent);
     const newServer = ns.cloud.purchaseServer(prefix, targetRam);
-    ns.writePort(Ports.Servers, { added: false, host: toDelete.host });
+    if (toDelete) {
+      ns.writePort(Ports.Servers, { added: false, host: toDelete.host });
+    }
     ns.writePort(Ports.Servers, { added: false, host: newServer });
     await ns.sleep(5_000);
   }
