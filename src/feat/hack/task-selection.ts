@@ -37,7 +37,6 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 		growTime = hackTime * 3.2;
 	}
 
-	const secMin = ns.getServerMinSecurityLevel(server.hostname);
 	const secDelta = ns.weakenAnalyze(1);
 	const weaken1Threads = getWeaken(ns, server).threads;
 
@@ -46,7 +45,7 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 		: Math.min(8, ns.growthAnalyze(server.hostname, (server.moneyMax ?? 1) / (server.moneyAvailable ?? 1)));
 
 	const growthEffect = ns.growthAnalyzeSecurity(growthThreads);
-	const weaken2Threads = Math.ceil((secMin + growthEffect) / secDelta);
+	const weaken2Threads = Math.ceil(growthEffect / secDelta);
 
 	// factor to multiply our required hack threads with to handle hacking failures
 	// we're adjusting the 'raw' factor down by 1x in case we high roll.
@@ -76,6 +75,7 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 	};
 	const weaken2: Task = {
 		action: 'weaken',
+		label: 'weaken 2',
 		target: server.hostname,
 		threads: weaken2Threads,
 		delay: weakenTime + 20 - growTime,
@@ -89,7 +89,7 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 		duration: hackTime,
 	};
 
-	return [weaken1, grow, weaken2, hack];
+	return [weaken1, grow, weaken2, hack].filter((t) => t.threads > 0);
 }
 
 export function hasFormulas(ns: NS) {
