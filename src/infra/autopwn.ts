@@ -12,6 +12,7 @@ export async function main(ns: NS) {
 	const servers = await crawlServers(ns, HOME, 100);
 
 	while (true) {
+		let serverspwned = [];
 		for (const server of servers) {
 			if (server.hasAdminRights || server.hostname.startsWith('NODE')) {
 				continue;
@@ -38,9 +39,16 @@ export async function main(ns: NS) {
 
 			const s = ns.getServer(server.hostname);
 			if (s.hasAdminRights) {
-				ns.writePort(Ports.Metrics, { type: 'log', message: `pwned ${host}` } satisfies LogEvent);
+				serverspwned.push(host);
 			}
 		}
+		if (serverspwned.length) {
+			ns.writePort(Ports.Metrics, {
+				type: 'log',
+				message: `pwned ${serverspwned.length} new servers`,
+			} satisfies LogEvent);
+		}
+		serverspwned = [];
 
 		await ns.sleep(5000);
 	}
