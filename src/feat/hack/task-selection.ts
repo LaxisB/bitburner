@@ -6,7 +6,7 @@ export function getWeaken(ns: NS, server: Server): Task {
 	const secCurr = ns.getServerSecurityLevel(server.hostname);
 	const secMin = ns.getServerMinSecurityLevel(server.hostname);
 	const secDelta = ns.weakenAnalyze(1);
-	const threads = Math.ceil((secCurr - secMin) / secDelta);
+	const threads = Math.floor((secCurr - secMin) / secDelta);
 	return {
 		action: 'weaken',
 		target: server.hostname,

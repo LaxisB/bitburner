@@ -1,7 +1,15 @@
 import { crawlServers } from '@/lib/servers';
 import type { NS, Server } from '@ns';
 import { updateBlacklist } from './blacklist';
-import { cleanPendingTasks, EXECUTOR_SCRIPT, getRam, runningTasks, scheduleBatch, SCRIPT_COST } from './scheduler';
+import {
+	cleanPendingTasks,
+	EXECUTOR_SCRIPT,
+	getRam,
+	runningTasks,
+	scheduleBatch,
+	ScheduleStrategy,
+	SCRIPT_COST,
+} from './scheduler';
 import { getBatch } from './task-selection';
 
 let servers: Server[];
@@ -47,7 +55,7 @@ async function loop(ns: NS) {
 			continue;
 		}
 
-		const success = scheduleBatch(ns, batch, runners);
+		const success = scheduleBatch(ns, batch, runners, ScheduleStrategy.AS_SPECIFIED);
 		if (!success) {
 			// RAM estimates are off, stop scheduling
 			ns.print('ERROR miscalculated batch feasability.');
@@ -67,14 +75,11 @@ async function loop(ns: NS) {
 		if (maxThreads < 1) continue;
 		const firstTask = batch.find((t) => t.threads > 0);
 		if (!firstTask) continue;
-		const cappedTask = { ...firstTask, threads: Math.min(firstTask.threads, maxThreads) };
-		const success = scheduleBatch(ns, [cappedTask], runners);
+		const success = scheduleBatch(ns, [firstTask], runners, ScheduleStrategy.MAX_POSSIBLE);
 		if (!success) {
 			ns.printf('partial FAILED for %s', target.hostname);
 			break;
 		}
-		ns.printf('partial[%s] ok for %s (%i/%i threads)', cappedTask.action, target.hostname, cappedTask.threads, firstTask.threads);
-		break;
 	}
 
 	await ns.sleep(1000);
