@@ -8,7 +8,6 @@ export function updateBlacklist(ns: NS) {
 	queueRead(ns, Ports.Servers, (m) => {
 		const msg = m as { added: boolean; host: string };
 		const { added, host } = msg;
-		ns.printf('Blacklist change %j', msg);
 		if (added) {
 			BLACKLIST.add(host);
 			ns.printf('+BLACKLIST %s', host);

@@ -1,4 +1,4 @@
-import type { LogEvent } from '@/domain';
+import type { LogEvent, ServerDeathEvent } from '@/domain';
 import { Ports } from '@/lib/constants';
 import type { NS } from '@ns';
 const prefix = 'NODE';
@@ -25,8 +25,8 @@ export async function main(ns: NS) {
 		} while (ns.cloud.getServerCost(2 ** pow) < maxCost);
 		const targetRam = 2 ** (pow - 1);
 
-		if (servers.length && targetRam <= servers[0].ram) {
-			// not a n increase
+		if (servers.length >= max && targetRam <= servers[0].ram) {
+			// not an increase
 			await ns.sleep(10_000);
 			continue;
 		}
@@ -36,6 +36,7 @@ export async function main(ns: NS) {
 		if (servers.length >= max && deletionCandidate) {
 			ns.writePort(Ports.Servers, { added: true, host: deletionCandidate.hostname });
 			ns.killall(deletionCandidate.hostname);
+			ns.writePort(Ports.Metrics, { type: 'serverdeath', host: deletionCandidate.hostname } satisfies ServerDeathEvent);
 			const res = ns.cloud.deleteServer(deletionCandidate.hostname);
 			if (!res) {
 				ns.printf("couldn't delete...");

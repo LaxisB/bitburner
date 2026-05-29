@@ -1,30 +1,28 @@
 import { crawlServers } from '@/lib/servers';
 import type { NS, Player, Server } from '@ns';
-import { updateBlacklist } from './blacklist';
+import { BLACKLIST, updateBlacklist } from './blacklist';
 import {
 	cleanPendingTasks,
-	EXECUTOR_SCRIPT,
-	getMaxRam,
+	EXECUTOR_SCRIPTS,
 	getRam,
 	runningTasks,
 	scheduleBatch,
 	ScheduleStrategy,
+	scheduleTask,
 	SCRIPT_COST,
 } from './scheduler';
 import { getBatch, scoreTarget } from './task-selection';
 
 let servers: Server[];
+const knownRunners = new Set<string>();
 
 export async function main(ns: NS) {
+	knownRunners.clear();
+	BLACKLIST.clear();
 	ns.disableLog('ALL');
 	ns.clearLog();
 	ns.ui.openTail();
 
-	servers = await crawlServers(ns, 'home');
-	ns.print('INFO distributing payload');
-	for (const server of servers) {
-		ns.scp(EXECUTOR_SCRIPT, server.hostname, 'home');
-	}
 	runningTasks.clear();
 
 	ns.print('INFO starting loop');
@@ -42,6 +40,23 @@ async function loop(ns: NS) {
 	const targets = getTargets(ns, servers, player);
 	const runners = getRunners(servers);
 
+	// Distribute payload to any runners that have appeared since last loop
+	for (const runner of runners) {
+		if (!knownRunners.has(runner.hostname)) {
+			for (const script of Object.values(EXECUTOR_SCRIPTS)) {
+				ns.scp(script, runner.hostname, 'home');
+			}
+			knownRunners.add(runner.hostname);
+			ns.print(`INFO distributed payload to new runner: ${runner.hostname}`);
+		}
+	}
+	// Prune deleted servers so they can be re-initialised if a name is reused
+	for (const hostname of knownRunners) {
+		if (!runners.some((r) => r.hostname === hostname)) {
+			knownRunners.delete(hostname);
+		}
+	}
+
 	const targetBatches = targets.map((target) => {
 		const batch = getBatch(ns, target, player);
 		const threads = batch?.reduce((a, c) => a + c.threads, 0) ?? 0;
@@ -50,28 +65,32 @@ async function loop(ns: NS) {
 
 	for (let i = 0; i < targetBatches.length; i++) {
 		const { target, batch, threads } = targetBatches[i];
-		const ramCurrent = runners.reduce((a, c) => a + Math.max(0, getRam(c)), 0);
-		const maxThreads = Math.floor(ramCurrent / SCRIPT_COST);
+
+		const getRunnerThreads = (runner: Server) => Math.max(0, Math.floor(getRam(runner) / SCRIPT_COST));
+		const maxThreads = runners.reduce((a, c) => a + getRunnerThreads(c), 0);
 
 		if (!batch?.length || threads > maxThreads) {
-			if (batch?.length) {
-				//ns.print(
-				//`WARN bad Batch on ${target.hostname}: length=${batch?.length ?? 0}, threads = ${threads} / ${maxThreads}`,
-				//);
-			}
 			continue;
 		}
 
 		const success = scheduleBatch(ns, batch, runners, ScheduleStrategy.AS_SPECIFIED);
 		if (!success) {
-			// RAM estimates are off, stop scheduling
-			ns.print('ERROR miscalculated batch feasability.');
-			break;
+			// Refresh runner RAM state — killed tasks freed RAM but runner objects are stale
+			for (const runner of runners) {
+				try { Object.assign(runner, { ramUsed: ns.getServer(runner.hostname).ramUsed }); }
+				catch { Object.assign(runner, { ramUsed: runner.maxRam }); }
+			}
+			ns.print(`WARN miscalculated batch feasability for ${target.hostname} (${threads}/${maxThreads} threads)`);
+			continue;
 		}
 
 		targetBatches[i].scheduled = true;
-		ns.print('SUCCESS scheduled batch for %s (%i threads)', target.hostname, threads);
+		ns.print(`SUCCESS scheduled batch for ${target.hostname} (${threads} threads)`);
 		await ns.sleep(100);
+		// Refresh runner RAM after sleep — other scripts may have consumed RAM during the pause
+		for (const runner of runners) {
+			Object.assign(runner, { ramUsed: ns.getServer(runner.hostname).ramUsed });
+		}
 	}
 
 	// No full batch scheduled - schedule a capped partial task to prep or generate income
@@ -79,17 +98,18 @@ async function loop(ns: NS) {
 	// this way, we can guarantee some results, because doing partial work on the max batch is kinda useless
 	for (const { target, batch, scheduled } of targetBatches.slice().reverse()) {
 		if (!batch?.length || scheduled) continue;
-		const ramCurrent = runners.reduce((a, c) => a + Math.max(0, getRam(c)), 0);
-		const maxThreads = Math.floor(ramCurrent / SCRIPT_COST);
+		const getRunnerThreads = (runner: Server) => Math.max(0, Math.floor(getRam(runner) / SCRIPT_COST));
+		const maxThreads = runners.reduce((a, c) => a + getRunnerThreads(c), 0);
+
 		if (maxThreads < 1) continue;
-		const task = batch.find((t) => t.threads);
+		const task = batch.find((t) => t.threads >= 1);
 		if (!task) continue;
-		const success = scheduleBatch(ns, [task], runners, ScheduleStrategy.MAX_POSSIBLE);
-		if (!success) {
+		const pids = scheduleTask(ns, task, runners, ScheduleStrategy.MAX_POSSIBLE);
+		if (!pids.length) {
 			ns.print(
 				`WARN partial[${task.label ?? task.action}] FAILED for ${target.hostname} (task max: ${task.threads.toPrecision(3)}, total max: ${maxThreads})`,
 			);
-			break;
+			continue;
 		}
 		ns.print(
 			`SUCCESS partial[${task.label ?? task.action}] SUCCCESS for ${target.hostname} (task max: ${task.threads.toPrecision(3)}, total max: ${maxThreads})`,

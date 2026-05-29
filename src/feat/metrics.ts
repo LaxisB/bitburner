@@ -57,6 +57,12 @@ function updateState(ns: NS) {
 		}
 	});
 
+	// Remove tasks whose deadline has long passed — orphaned by killed scripts that never sent exec_end
+	const now = Date.now();
+	tasks.forEach((t, key) => {
+		if (t.time + (t.delay ?? 0) + (t.duration ?? 0) < now - 10_000) tasks.delete(key);
+	});
+
 	events = events.slice(-5);
 	return count > 0;
 }
@@ -69,7 +75,7 @@ function logState(ns: NS, servers: Server[]) {
 	tasks.forEach((t) => {
 		const entry = taskByTarget.get(t.target) ?? { next: Number.POSITIVE_INFINITY, weaken: 0, grow: 0, hack: 0 };
 		entry.next = Math.min(entry.next, t.time + (t.delay ?? 0) + (t.duration ?? 0) - Date.now());
-		entry[t.func as 'weaken' | 'grow' | 'hack'] = (entry[t.func as 'weaken' | 'grow' | 'hack'] ?? 0) + 1;
+		entry[t.func as 'weaken' | 'grow' | 'hack'] = (entry[t.func as 'weaken' | 'grow' | 'hack'] ?? 0) + t.threads;
 		taskByTarget.set(t.target, entry);
 	});
 
@@ -102,12 +108,11 @@ function logState(ns: NS, servers: Server[]) {
 		})
 		.sort((a, b) => b.moneyMax - a.moneyMax);
 
-	ns.printf('%-20s %10s %6s %6s %6s %10s %4s %4s %4s', 'Server', 'Money', '%', 'Sec', 'Min', 'Duration', 'W', 'G', 'H');
+	ns.printf('%-20s %10s %6s %6s %10s %4s %4s %4s', 'Server', 'Money', '%', 'Sec↓', 'Duration', 'W', 'G', 'H');
 	ns.printf(
-		'%-20s %10s %6s %6s %6s %10s %4s %4s %4s',
+		'%-20s %10s %6s %6s %10s %4s %4s %4s',
 		'--------------------',
 		'----------',
-		'------',
 		'------',
 		'------',
 		'----------',
@@ -117,12 +122,11 @@ function logState(ns: NS, servers: Server[]) {
 	);
 	for (const r of serverRows) {
 		ns.printf(
-			'%-20s %10s %5.1f%% %6.2f %6.2f %10s %4i %4i %4i',
+			'%-20s %10s %5.1f%% %6.2f %10s %4i %4i %4i',
 			r.hostname,
 			ns.format.number(r.money),
 			r.moneyPct,
-			r.sec,
-			r.minSec,
+			r.sec - r.minSec,
 			r.duration,
 			r.weaken,
 			r.grow,
