@@ -9,7 +9,8 @@ const tasks = new Map<string, ExecStartEvent & { time: number }>();
 let events = ['', '', '', '', ''] as string[];
 
 const FONT_SIZE = 16;
-const CHAR_WIDTH = 50;
+const CHAR_WIDTH = 43;
+const CHAR_HEIGHT = 45;
 
 export async function main(ns: NS) {
 	tasks.clear();
@@ -17,7 +18,7 @@ export async function main(ns: NS) {
 	ns.clearLog();
 	ns.ui.openTail();
 	ns.ui.setTailTitle('Server Metrics');
-	ns.ui.resizeTail(CHAR_WIDTH * FONT_SIZE, 40 * FONT_SIZE);
+	ns.ui.resizeTail(CHAR_WIDTH * FONT_SIZE, CHAR_HEIGHT * FONT_SIZE);
 	ns.ui.setTailFontSize(FONT_SIZE);
 	let lastRender = 0;
 	while (true) {
@@ -57,7 +58,7 @@ function updateState(ns: NS) {
 		}
 	});
 
-	// Remove tasks whose deadline has long passed — orphaned by killed scripts that never sent exec_end
+	// Remove tasks whose deadline has long passed; usually orphaned by killed scripts that never sent exec_end
 	const now = Date.now();
 	tasks.forEach((t, key) => {
 		if (t.time + (t.delay ?? 0) + (t.duration ?? 0) < now - 10_000) tasks.delete(key);
@@ -69,6 +70,8 @@ function updateState(ns: NS) {
 
 function logState(ns: NS, servers: Server[]) {
 	ns.clearLog();
+	const [scriptIncome] = ns.getTotalScriptIncome();
+	const scriptExp = ns.getTotalScriptExpGain();
 	const hackLevel = ns.getHackingLevel();
 
 	const taskByTarget = new Map<string, { next: number; weaken: number; grow: number; hack: number }>();
@@ -108,6 +111,7 @@ function logState(ns: NS, servers: Server[]) {
 		})
 		.sort((a, b) => b.moneyMax - a.moneyMax);
 
+	ns.printf('Script Income: %-10s\tScript Exp: %-10s', ns.format.number(scriptIncome), ns.format.number(scriptExp));
 	ns.printf('%-20s %10s %6s %6s %10s %4s %4s %4s', 'Server', 'Money', '%', 'Sec↓', 'Duration', 'W', 'G', 'H');
 	ns.printf(
 		'%-20s %10s %6s %6s %10s %4s %4s %4s',
