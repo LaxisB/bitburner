@@ -19,6 +19,9 @@ export enum ScheduleStrategy {
 
 export const runningTasks = new Map<string, ScheduledTask[]>();
 
+/**
+ * getRamUsed() function that refreshes server state to handle some of our nodes being replaced in the background
+ */
 const safeGetRamUsed = (ns: NS, hostname: string, fallback: number) => {
 	try {
 		return ns.getServer(hostname).ramUsed;
@@ -141,12 +144,13 @@ function executeTask(ns: NS, task: ScheduledTask) {
 		.filter((key) => !!(task as any)[key])
 		.flatMap((key) => [`--${key}`, (task as unknown as Record<string, unknown>)[key]]);
 	const script = EXECUTOR_SCRIPTS[task.action];
+	// wrap in try-catch no never block execution
 	try {
 		if (!ns.fileExists(script, task.runner)) {
 			ns.print(`WARN ${script} missing on ${task.runner}, re-scp'ing`);
 			ns.scp(script, task.runner, 'home');
 		}
-	} catch { /* runner was deleted */ }
+	} catch {}
 	//biome-ignore lint/suspicious/noExplicitAny:
 	const pid = ns.exec(script, task.runner, task.threads, ...(args as any));
 	return pid;

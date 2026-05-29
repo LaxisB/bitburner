@@ -4,6 +4,7 @@ import { BLACKLIST, updateBlacklist } from './blacklist';
 import {
 	cleanPendingTasks,
 	EXECUTOR_SCRIPTS,
+	getMaxRam,
 	getRam,
 	runningTasks,
 	scheduleBatch,
@@ -93,6 +94,17 @@ async function loop(ns: NS) {
 		}
 	}
 
+	// Guard: partial tasks must not steal RAM that full batches need.
+	// Greedily simulate batch packing to find how much RAM full batches can actually claim,
+	// then give partials only the leftover.
+	const totalMaxRam = runners.reduce((a, c) => a + getMaxRam(c), 0);
+	let simAvailable = totalMaxRam;
+	for (const { threads } of targetBatches) {
+		const batchRam = threads * SCRIPT_COST;
+		if (batchRam <= simAvailable) simAvailable -= batchRam;
+	}
+	let partialThreadBudget = Math.floor(simAvailable / SCRIPT_COST);
+
 	// No full batch scheduled - schedule a capped partial task to prep or generate income
 	// we're starting from the smallest batch, and work our way up.
 	// this way, we can guarantee some results, because doing partial work on the max batch is kinda useless
@@ -101,18 +113,22 @@ async function loop(ns: NS) {
 		const getRunnerThreads = (runner: Server) => Math.max(0, Math.floor(getRam(runner) / SCRIPT_COST));
 		const maxThreads = runners.reduce((a, c) => a + getRunnerThreads(c), 0);
 
-		if (maxThreads < 1) continue;
+		if (maxThreads < 1 || partialThreadBudget < 1) continue;
 		const task = batch.find((t) => t.threads >= 1);
 		if (!task) continue;
-		const pids = scheduleTask(ns, task, runners, ScheduleStrategy.MAX_POSSIBLE);
+
+		const threadsToSchedule = Math.min(Math.floor(task.threads), partialThreadBudget);
+		const cappedTask = { ...task, threads: threadsToSchedule };
+		const pids = scheduleTask(ns, cappedTask, runners, ScheduleStrategy.MAX_POSSIBLE);
 		if (!pids.length) {
 			ns.print(
-				`WARN partial[${task.label ?? task.action}] FAILED for ${target.hostname} (task max: ${task.threads.toPrecision(3)}, total max: ${maxThreads})`,
+				`WARN partial[${task.label ?? task.action}] FAILED for ${target.hostname} (threads: ${threadsToSchedule}/${Math.floor(task.threads)}, budget: ${partialThreadBudget})`,
 			);
 			continue;
 		}
+		partialThreadBudget -= threadsToSchedule;
 		ns.print(
-			`SUCCESS partial[${task.label ?? task.action}] SUCCCESS for ${target.hostname} (task max: ${task.threads.toPrecision(3)}, total max: ${maxThreads})`,
+			`SUCCESS partial[${task.label ?? task.action}] for ${target.hostname} (threads: ${threadsToSchedule}/${Math.floor(task.threads)}, budget left: ${partialThreadBudget})`,
 		);
 	}
 
