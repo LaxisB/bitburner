@@ -1,5 +1,5 @@
-import { Ports } from '@/utils/constants';
-import { queueRead } from '@/utils/utils';
+import { Ports } from '@/lib/constants';
+import { queueRead } from '@/lib/utils';
 import { NS } from '@ns';
 
 export const BLACKLIST = new Set<string>();

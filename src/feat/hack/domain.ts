@@ -1,4 +1,4 @@
-import { Server } from '@/utils/domain';
+import { Server } from '@/lib/domain';
 
 export interface ExtendedServerStats extends Server {
   tasks: ScheduledTask[];

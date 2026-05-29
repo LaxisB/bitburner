@@ -4,7 +4,6 @@ const AUTO_LAUNCH: string | [string, ...any] = [
   './ui.js',
   'infra/autopwn.js',
   'infra/servers.js',
-  // 'hack/manager.js',
   // 'feat/hacknet.js',
   //  'feat/stocks.js',
   'feat/hack/orchestrator.js',

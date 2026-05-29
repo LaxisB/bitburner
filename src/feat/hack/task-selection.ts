@@ -1,5 +1,5 @@
-import { Server } from '@/utils/domain';
-import { crawlServers } from '@/utils/servers';
+import { Server } from '@/lib/domain';
+import { crawlServers } from '@/lib/servers';
 import { NS, Player } from '@ns';
 import { Task } from './domain';
 import { getRam, runningTasks } from './scheduler';

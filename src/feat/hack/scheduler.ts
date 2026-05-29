@@ -1,4 +1,4 @@
-import { Server } from '@/utils/domain';
+import { Server } from '@/lib/domain';
 import { NS } from '@ns';
 import { ScheduledTask, Task } from './domain';
 

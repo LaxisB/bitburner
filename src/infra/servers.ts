@@ -1,5 +1,5 @@
 import type { LogEvent } from '@/domain';
-import { Ports } from '@/utils/constants';
+import { Ports } from '@/lib/constants';
 import { NS } from '@ns';
 const prefix = `NODE`;
 
