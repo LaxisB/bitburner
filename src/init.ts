@@ -5,7 +5,7 @@ const AUTO_LAUNCH = [
 	'infra/servers.js',
 	'feat/metrics.js',
 	'feat/hack/orchestrator.js',
-	// 'feat/hacknet.js',
+	'feat/hacknet.js',
 	//  'feat/stocks.js',
 ];
 
