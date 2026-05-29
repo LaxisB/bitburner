@@ -9,7 +9,7 @@ const tasks = new Map<string, ExecStartEvent & { time: number }>();
 let events = ['', '', '', '', ''] as string[];
 
 const FONT_SIZE = 16;
-const CHAR_WIDTH = 43;
+const CHAR_WIDTH = 47;
 const CHAR_HEIGHT = 45;
 
 export async function main(ns: NS) {
@@ -48,7 +48,6 @@ function updateState(ns: NS) {
 				events.push(msg.message);
 				break;
 			case 'serverdeath':
-				events.push(`Killed ${msg.host}`);
 				tasks.forEach((t) => {
 					if (t.runner === msg.host) {
 						tasks.delete(t.pid.toString());
@@ -112,7 +111,7 @@ function logState(ns: NS, servers: Server[]) {
 		.sort((a, b) => b.moneyMax - a.moneyMax);
 
 	ns.printf('Script Income: %-10s\tScript Exp: %-10s', ns.format.number(scriptIncome), ns.format.number(scriptExp));
-	ns.printf('%-20s %10s %6s %6s %10s %4s %4s %4s', 'Server', 'Money', '%', 'Sec↓', 'Duration', 'W', 'G', 'H');
+	ns.printf('%-20s %10s %6s %6s %10s %6s %6s %6s', 'Server', 'Money', '%', 'Sec↓', 'Duration', 'W', 'G', 'H');
 	ns.printf(
 		'%-20s %10s %6s %6s %10s %4s %4s %4s',
 		'--------------------',
@@ -120,13 +119,13 @@ function logState(ns: NS, servers: Server[]) {
 		'------',
 		'------',
 		'----------',
-		'----',
-		'----',
-		'----',
+		'------',
+		'------',
+		'------',
 	);
 	for (const r of serverRows) {
 		ns.printf(
-			'%-20s %10s %5.1f%% %6.2f %10s %4i %4i %4i',
+			'%-20s %10s %5.1f%% %6.2f %10s %6i %6i %6i',
 			r.hostname,
 			ns.format.number(r.money),
 			r.moneyPct,
