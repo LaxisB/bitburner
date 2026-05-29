@@ -9,15 +9,16 @@ import type { LogEvent } from '@/domain';
  */
 export async function main(ns: NS) {
 	ns.disableLog('ALL');
-	const servers = await crawlServers(ns, HOME, 100);
+	const alreadyPwned = new Set<string>();
 
 	while (true) {
-		let serverspwned = [];
+		const servers = await crawlServers(ns, HOME, 100);
+		const serverspwned = [];
 		for (const server of servers) {
-			if (server.hasAdminRights || server.hostname.startsWith('NODE')) {
+			const host = server.hostname;
+			if (server.hasAdminRights || host.startsWith('NODE') || alreadyPwned.has(host)) {
 				continue;
 			}
-			const host = server.hostname;
 			try {
 				ns.brutessh(host);
 			} catch (e) {}
@@ -37,18 +38,18 @@ export async function main(ns: NS) {
 				ns.nuke(host);
 			} catch (e) {}
 
-			const s = ns.getServer(server.hostname);
+			const s = ns.getServer(host);
 			if (s.hasAdminRights) {
 				serverspwned.push(host);
+				alreadyPwned.add(host);
 			}
 		}
 		if (serverspwned.length) {
 			ns.writePort(Ports.Metrics, {
 				type: 'log',
-				message: `pwned ${serverspwned.length} new servers`,
+				message: `pwned ${serverspwned.join(',').slice(0, 50)}... new servers`,
 			} satisfies LogEvent);
 		}
-		serverspwned = [];
 
 		await ns.sleep(5000);
 	}
