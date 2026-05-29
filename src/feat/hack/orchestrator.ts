@@ -19,7 +19,7 @@ export async function main(ns: NS) {
 
 	ns.printf('starting loop');
 	while (true) {
-		loop(ns);
+		await loop(ns);
 	}
 }
 
@@ -50,6 +50,7 @@ async function loop(ns: NS) {
 		const success = scheduleBatch(ns, batch, runners);
 		if (!success) {
 			// RAM estimates are off, stop scheduling
+			ns.print('ERROR miscalculated batch feasability.');
 			break;
 		}
 
