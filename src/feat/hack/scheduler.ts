@@ -16,6 +16,7 @@ export enum ScheduleStrategy {
 export const runningTasks = new Map<string, ScheduledTask[]>();
 
 export const getRam = (server: Server) => server.maxRam - server.ramUsed - (HOST_RAM_BLOCKER[server.hostname] ?? 0);
+export const getMaxRam = (server: Server) => server.maxRam - (HOST_RAM_BLOCKER[server.hostname] ?? 0);
 
 export function scheduleBatch(ns: NS, tasks: Task[], runners: Server[], strategy = ScheduleStrategy.AS_SPECIFIED): boolean {
 	let pids: number[] = [];

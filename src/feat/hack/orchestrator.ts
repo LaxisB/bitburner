@@ -1,31 +1,33 @@
 import { crawlServers } from '@/lib/servers';
-import type { NS, Server } from '@ns';
+import type { NS, Player, Server } from '@ns';
 import { updateBlacklist } from './blacklist';
 import {
 	cleanPendingTasks,
 	EXECUTOR_SCRIPT,
+	getMaxRam,
 	getRam,
 	runningTasks,
 	scheduleBatch,
 	ScheduleStrategy,
 	SCRIPT_COST,
 } from './scheduler';
-import { getBatch } from './task-selection';
+import { getBatch, scoreTarget } from './task-selection';
 
 let servers: Server[];
 
 export async function main(ns: NS) {
 	ns.disableLog('ALL');
+	ns.clearLog();
 	ns.ui.openTail();
 
-	servers = await getServers(ns);
-	ns.printf('distributing payload');
+	servers = await crawlServers(ns, 'home');
+	ns.print('INFO distributing payload');
 	for (const server of servers) {
 		ns.scp(EXECUTOR_SCRIPT, server.hostname, 'home');
 	}
 	runningTasks.clear();
 
-	ns.printf('starting loop');
+	ns.print('INFO starting loop');
 	while (true) {
 		await loop(ns);
 	}
@@ -35,10 +37,10 @@ async function loop(ns: NS) {
 	updateBlacklist(ns);
 	cleanPendingTasks(ns);
 
-	servers = await getServers(ns);
-	const targets = getTargets(ns, servers);
-	const runners = getRunners(servers);
+	servers = await crawlServers(ns, 'home');
 	const player = ns.getPlayer();
+	const targets = getTargets(ns, servers, player);
+	const runners = getRunners(servers);
 
 	const targetBatches = targets.map((target) => {
 		const batch = getBatch(ns, target, player);
@@ -52,6 +54,11 @@ async function loop(ns: NS) {
 		const maxThreads = Math.floor(ramCurrent / SCRIPT_COST);
 
 		if (!batch?.length || threads > maxThreads) {
+			if (batch?.length) {
+				//ns.print(
+				//`WARN bad Batch on ${target.hostname}: length=${batch?.length ?? 0}, threads = ${threads} / ${maxThreads}`,
+				//);
+			}
 			continue;
 		}
 
@@ -63,45 +70,40 @@ async function loop(ns: NS) {
 		}
 
 		targetBatches[i].scheduled = true;
-		ns.printf('scheduled batch for %s (%i threads)', target.hostname, threads);
+		ns.print('SUCCESS scheduled batch for %s (%i threads)', target.hostname, threads);
 		await ns.sleep(100);
 	}
 
 	// No full batch scheduled - schedule a capped partial task to prep or generate income
-	for (const { target, batch, scheduled } of targetBatches) {
+	// we're starting from the smallest batch, and work our way up.
+	// this way, we can guarantee some results, because doing partial work on the max batch is kinda useless
+	for (const { target, batch, scheduled } of targetBatches.slice().reverse()) {
 		if (!batch?.length || scheduled) continue;
 		const ramCurrent = runners.reduce((a, c) => a + Math.max(0, getRam(c)), 0);
 		const maxThreads = Math.floor(ramCurrent / SCRIPT_COST);
 		if (maxThreads < 1) continue;
-		const firstTask = batch.find((t) => t.threads > 0);
-		if (!firstTask) continue;
-		const success = scheduleBatch(ns, [firstTask], runners, ScheduleStrategy.MAX_POSSIBLE);
+		const task = batch.find((t) => t.threads);
+		if (!task) continue;
+		const success = scheduleBatch(ns, [task], runners, ScheduleStrategy.MAX_POSSIBLE);
 		if (!success) {
-			ns.printf('partial FAILED for %s', target.hostname);
+			ns.print(
+				`WARN partial[${task.label ?? task.action}] FAILED for ${target.hostname} (task max: ${task.threads.toPrecision(3)}, total max: ${maxThreads})`,
+			);
 			break;
 		}
+		ns.print(
+			`SUCCESS partial[${task.label ?? task.action}] SUCCCESS for ${target.hostname} (task max: ${task.threads.toPrecision(3)}, total max: ${maxThreads})`,
+		);
 	}
 
 	await ns.sleep(1000);
-}
-
-async function getServers(ns: NS) {
-	const servers = await crawlServers(ns, 'home');
-	const byHostname: Record<string, Server> = servers.reduce(
-		(acc, curr) => {
-			acc[curr.hostname] = curr;
-			return acc;
-		},
-		{} as Record<string, Server>,
-	);
-	return Object.values(byHostname);
 }
 
 function getRunners(servers: Server[]) {
 	return servers.filter((x) => x.hasAdminRights).sort((a, b) => getRam(b) - getRam(a));
 }
 
-function getTargets(ns: NS, servers: Server[]) {
+function getTargets(ns: NS, servers: Server[], player: Player) {
 	return servers
 		.filter(
 			(x) =>
@@ -111,5 +113,5 @@ function getTargets(ns: NS, servers: Server[]) {
 				ns.getServerRequiredHackingLevel(x.hostname) <= ns.getHackingLevel() &&
 				x.moneyAvailable,
 		)
-		.sort((a, b) => (b?.moneyMax ?? 1) - (a?.moneyMax ?? 1));
+		.sort((a, b) => scoreTarget(ns, b, player) - scoreTarget(ns, a, player));
 }

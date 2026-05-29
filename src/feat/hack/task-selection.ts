@@ -1,6 +1,6 @@
 import type { NS, Player, Server } from '@ns';
 import type { Task } from './domain';
-import { runningTasks } from './scheduler';
+import { runningTasks, SCRIPT_COST } from './scheduler';
 
 export function getWeaken(ns: NS, server: Server): Task {
 	const secCurr = ns.getServerSecurityLevel(server.hostname);
@@ -38,11 +38,13 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 	}
 
 	const secDelta = ns.weakenAnalyze(1);
-	const weaken1Threads = getWeaken(ns, server).threads;
+	const weaken1Threads = Math.ceil(getWeaken(ns, server).threads);
 
-	const growthThreads = formulasAvailable
-		? ns.formulas.hacking.growThreads(server, player, server.moneyMax ?? Number.MAX_SAFE_INTEGER)
-		: Math.min(8, ns.growthAnalyze(server.hostname, (server.moneyMax ?? 1) / (server.moneyAvailable ?? 1)));
+	const growthThreads = Math.ceil(
+		formulasAvailable
+			? ns.formulas.hacking.growThreads(server, player, server.moneyMax ?? Number.MAX_SAFE_INTEGER)
+			: ns.growthAnalyze(server.hostname, (server.moneyMax ?? 1) / (server.moneyAvailable ?? 1)),
+	);
 
 	const growthEffect = ns.growthAnalyzeSecurity(growthThreads);
 	const weaken2Threads = Math.ceil(growthEffect / secDelta);
@@ -57,7 +59,7 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 		? 100 / ns.formulas.hacking.hackPercent(server, player)
 		: 1 / ns.hackAnalyze(server.hostname);
 
-	const hackThreads = Math.floor(rawHackThreadsRequired * failureFactor);
+	const hackThreads = Math.ceil(rawHackThreadsRequired * failureFactor);
 
 	const weaken1: Task = {
 		action: 'weaken',
@@ -77,7 +79,7 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 		action: 'weaken',
 		label: 'weaken 2',
 		target: server.hostname,
-		threads: weaken2Threads,
+		threads: growthThreads > 0 ? weaken2Threads : 0,
 		delay: weakenTime + 20 - growTime,
 		duration: weakenTime,
 	};
@@ -90,6 +92,51 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 	};
 
 	return [weaken1, grow, weaken2, hack].filter((t) => t.threads > 0);
+}
+
+export function scoreTarget(ns: NS, server: Server, player: Player): number {
+	if (!server.moneyMax) return 0;
+	const hostname = server.hostname;
+	const formulasAvailable = hasFormulas(ns);
+
+	const peakServer = formulasAvailable
+		? { ...server, hackDifficulty: server.minDifficulty, moneyAvailable: server.moneyMax }
+		: server;
+
+	const hackPercent = formulasAvailable
+		? ns.formulas.hacking.hackPercent(peakServer, player)
+		: ns.hackAnalyze(hostname);
+	const hackTime = formulasAvailable
+		? ns.formulas.hacking.hackTime(peakServer, player)
+		: ns.getHackTime(hostname);
+	const hackChance = formulasAvailable
+		? ns.formulas.hacking.hackChance(peakServer, player)
+		: ns.hackAnalyzeChance(hostname);
+
+	if (!hackPercent || !hackTime) return 0;
+
+	const HACK_FRACTION = 0.5;
+	const hackThreads = Math.ceil(HACK_FRACTION / hackPercent);
+	const actualFraction = hackThreads * hackPercent;
+
+	const secDelta = ns.weakenAnalyze(1);
+	const weaken1Threads = Math.ceil(ns.hackAnalyzeSecurity(hackThreads, hostname) / secDelta);
+
+	const growRatio = 1 / (1 - Math.min(actualFraction, 0.999));
+	const growThreads = formulasAvailable
+		? Math.ceil(
+				ns.formulas.hacking.growThreads(
+					{ ...peakServer, moneyAvailable: (server.moneyMax ?? 0) * (1 - actualFraction) },
+					player,
+					server.moneyMax ?? 0,
+				),
+			)
+		: Math.ceil(ns.growthAnalyze(hostname, growRatio));
+	const weaken2Threads = Math.ceil(ns.growthAnalyzeSecurity(growThreads) / secDelta);
+
+	const totalThreads = hackThreads + weaken1Threads + growThreads + weaken2Threads;
+	const moneyPerCycle = (server.moneyMax ?? 0) * actualFraction * hackChance;
+	return moneyPerCycle / hackTime / (totalThreads * SCRIPT_COST);
 }
 
 export function hasFormulas(ns: NS) {

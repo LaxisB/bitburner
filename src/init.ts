@@ -1,13 +1,12 @@
 import type { NS } from '@ns';
 
 const AUTO_LAUNCH = [
-	'./ui.js',
 	'infra/autopwn.js',
 	'infra/servers.js',
-	// 'feat/hacknet.js',
-	//  'feat/stocks.js',
 	'feat/hack/orchestrator.js',
 	'feat/metrics.js',
+	// 'feat/hacknet.js',
+	//  'feat/stocks.js',
 ];
 
 export async function main(ns: NS) {

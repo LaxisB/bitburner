@@ -10,6 +10,7 @@ export interface Task {
 	threads: number;
 	duration: number;
 	delay?: number;
+	label?: string;
 }
 
 export interface ScheduledTask extends Task {
