@@ -21,8 +21,6 @@ export async function main(ns: NS) {
 	knownRunners.clear();
 	BLACKLIST.clear();
 	ns.disableLog('ALL');
-	ns.clearLog();
-	ns.ui.openTail();
 
 	runningTasks.clear();
 
@@ -33,7 +31,10 @@ export async function main(ns: NS) {
 }
 
 async function loop(ns: NS) {
-	updateBlacklist(ns);
+	if (updateBlacklist(ns)) {
+		ns.print('INFO server de-blacklisted — restarting orchestrator');
+		ns.spawn('feat/hack/orchestrator.js');
+	}
 	cleanPendingTasks(ns);
 
 	servers = await crawlServers(ns, 'home');
@@ -48,7 +49,6 @@ async function loop(ns: NS) {
 				ns.scp(script, runner.hostname, 'home');
 			}
 			knownRunners.add(runner.hostname);
-			ns.print(`INFO distributed payload to new runner: ${runner.hostname}`);
 		}
 	}
 	// Prune deleted servers so they can be re-initialised if a name is reused
@@ -78,8 +78,11 @@ async function loop(ns: NS) {
 		if (!success) {
 			// Refresh runner RAM state — killed tasks freed RAM but runner objects are stale
 			for (const runner of runners) {
-				try { Object.assign(runner, { ramUsed: ns.getServer(runner.hostname).ramUsed }); }
-				catch { Object.assign(runner, { ramUsed: runner.maxRam }); }
+				try {
+					Object.assign(runner, { ramUsed: ns.getServer(runner.hostname).ramUsed });
+				} catch {
+					Object.assign(runner, { ramUsed: runner.maxRam });
+				}
 			}
 			ns.print(`WARN miscalculated batch feasability for ${target.hostname} (${threads}/${maxThreads} threads)`);
 			continue;
