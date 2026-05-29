@@ -1,26 +1,25 @@
 import type { NS, Server } from '@ns';
 
 // if we don't make this async, the game explodes
-export async function crawlServers(ns: NS, host: string, depth = 10): Promise<Server[]> {
-	async function extend(ns: NS, host: string, parent: string, list: Server[], depth = 1) {
-		const s = ns.getServer(host);
-		list.push(s);
+export async function crawlServers(ns: NS, host: string, depth = 20): Promise<Server[]> {
+	const found: Record<string, Server> = {};
 
-		const children = ns.scan(host).filter((h) => parent !== h);
-		children.forEach((host) => {
-			list.push(ns.getServer(host));
-		});
+	async function extend(ns: NS, host: string, depth = 1) {
+		found[host] = ns.getServer(host);
+
+		const children = ns.scan(host).filter((h) => !found[h]);
+		for (const child of children) {
+			found[child] = ns.getServer(child);
+		}
 
 		if (depth > 0) {
 			for (const child of children) {
-				await extend(ns, child, host, list, depth - 1);
+				await extend(ns, child, depth - 1);
 			}
 		}
-		return;
 	}
 
-	const list: Server[] = [];
-	await extend(ns, host, '', list, depth);
+	await extend(ns, host, depth);
 
-	return list;
+	return Object.values(found);
 }
