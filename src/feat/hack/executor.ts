@@ -1,7 +1,7 @@
 import type { ExecStartEvent, ExecEndEvent } from '@/domain';
 import { NS } from '@ns';
 
-export interface SlaveArgs {
+interface Args {
   threads: number;
   delay: number;
   duration: number;
@@ -15,7 +15,7 @@ export interface SlaveArgs {
  * simple slave script that runs the command provided
  */
 export async function main(ns: NS) {
-  const args: SlaveArgs = ns.flags([
+  const args: Args = ns.flags([
     ['threads', 1],
     ['delay', 0],
     ['duration', 0],
