@@ -59,23 +59,21 @@ async function loop(ns: NS) {
 		await ns.sleep(100);
 	}
 
-	// No full batch scheduled - schedule the first task of a batch where every task individually fits
+	// No full batch scheduled - schedule a capped partial task to prep or generate income
 	for (const { target, batch, scheduled } of targetBatches) {
 		if (!batch?.length || scheduled) continue;
 		const ramCurrent = runners.reduce((a, c) => a + Math.max(0, getRam(c)), 0);
 		const maxThreads = Math.floor(ramCurrent / SCRIPT_COST);
-		if (!batch.every((t) => t.threads <= maxThreads)) continue;
-		const firstTask = batch.find((t) => t.threads); // using .find for threads allows us to skip 0 thread tasks
-		if (!firstTask) {
-			ns.printf('partial FAILED for %s', target.hostname);
-			break;
-		}
-		const success = scheduleBatch(ns, [firstTask], runners);
+		if (maxThreads < 1) continue;
+		const firstTask = batch.find((t) => t.threads > 0);
+		if (!firstTask) continue;
+		const cappedTask = { ...firstTask, threads: Math.min(firstTask.threads, maxThreads) };
+		const success = scheduleBatch(ns, [cappedTask], runners);
 		if (!success) {
 			ns.printf('partial FAILED for %s', target.hostname);
 			break;
 		}
-		ns.printf('partial[%s] ok for %s (%i threads)', firstTask.action, target.hostname, firstTask.threads);
+		ns.printf('partial[%s] ok for %s (%i/%i threads)', cappedTask.action, target.hostname, cappedTask.threads, firstTask.threads);
 		break;
 	}
 

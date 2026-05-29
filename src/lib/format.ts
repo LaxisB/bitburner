@@ -14,7 +14,7 @@ export function formatDuration(millis: number) {
 	const minutesString = mins.toString().padStart(2, '0');
 	const secondsString = secs.toString().padStart(2, '0');
 
-	return `${hoursString}${minutesString}${secondsString}`;
+	return `${hoursString}${minutesString}:${secondsString}`;
 }
 
 export function formatNum(num: number) {
