@@ -15,10 +15,8 @@ import {
 import { getBatch, scoreTarget } from './task-selection';
 
 let servers: Server[];
-const knownRunners = new Set<string>();
 
 export async function main(ns: NS) {
-	knownRunners.clear();
 	BLACKLIST.clear();
 	ns.disableLog('ALL');
 
@@ -41,22 +39,6 @@ async function loop(ns: NS) {
 	const player = ns.getPlayer();
 	const targets = getTargets(ns, servers, player);
 	const runners = getRunners(servers);
-
-	// Distribute payload to any runners that have appeared since last loop
-	for (const runner of runners) {
-		if (!knownRunners.has(runner.hostname)) {
-			for (const script of Object.values(EXECUTOR_SCRIPTS)) {
-				ns.scp(script, runner.hostname, 'home');
-			}
-			knownRunners.add(runner.hostname);
-		}
-	}
-	// Prune deleted servers so they can be re-initialised if a name is reused
-	for (const hostname of knownRunners) {
-		if (!runners.some((r) => r.hostname === hostname)) {
-			knownRunners.delete(hostname);
-		}
-	}
 
 	const targetBatches = targets.map((target) => {
 		const batch = getBatch(ns, target, player);
@@ -150,7 +132,7 @@ function getTargets(ns: NS, servers: Server[], player: Player) {
 				!x.purchasedByPlayer &&
 				x.hasAdminRights &&
 				ns.getServerRequiredHackingLevel(x.hostname) <= ns.getHackingLevel() &&
-				x.moneyAvailable,
+				(x.moneyMax ?? 0) > 0,
 		)
 		.sort((a, b) => scoreTarget(ns, b, player) - scoreTarget(ns, a, player));
 }

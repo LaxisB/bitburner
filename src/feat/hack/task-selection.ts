@@ -43,7 +43,7 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 	const growthThreads = Math.ceil(
 		formulasAvailable
 			? ns.formulas.hacking.growThreads(server, player, server.moneyMax ?? Number.MAX_SAFE_INTEGER)
-			: ns.growthAnalyze(server.hostname, (server.moneyMax ?? 1) / (server.moneyAvailable ?? 1)),
+			: ns.growthAnalyze(server.hostname, (server.moneyMax ?? 1) / Math.max(1, server.moneyAvailable ?? 1)),
 	);
 
 	const growthEffect = ns.growthAnalyzeSecurity(growthThreads);
@@ -80,7 +80,7 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 		label: 'weaken 2',
 		target: server.hostname,
 		threads: growthThreads > 0 ? weaken2Threads : 0,
-		delay: weakenTime + 200 - growTime,
+		delay: 200,
 		duration: weakenTime,
 	};
 	const hack: Task = {
@@ -91,7 +91,8 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 		duration: hackTime,
 	};
 
-	return [weaken1, grow, weaken2, hack].filter((t) => t.threads > 0);
+	const isEmpty = (server.moneyAvailable ?? 0) <= 0;
+	return [weaken1, grow, weaken2, ...(isEmpty ? [] : [hack])].filter((t) => t.threads > 0);
 }
 
 export function scoreTarget(ns: NS, server: Server, player: Player): number {
