@@ -1,14 +1,5 @@
 import type { NS } from '@ns';
 
-export const makeLog =
-	(ns: NS) =>
-	(str: string, ...args: unknown[]) => {
-		if (ns.getHostname() === 'home') {
-			ns.tprint(`[${ns.getHostname()}] ${ns.sprintf(str, args)}`);
-		}
-		ns.print(`[${ns.getHostname()}] ${ns.sprintf(str, args)}`);
-	};
-
 export function groupBy<T, R extends string | number>(list: T[], getter: (val: T) => R): Record<R, T[]> {
 	return list.reduce(
 		(acc, curr) => {
@@ -41,4 +32,10 @@ export async function queueReadAsync(ns: NS, queue: number, cb: (data: unknown) 
 		await cb(msg);
 		msg = ns.readPort(queue);
 	}
+}
+
+export async function ensureSingleton(ns: NS) {
+	ns.ps()
+		.filter((p) => p.filename === ns.getScriptName() && p.pid !== ns.pid)
+		.forEach((p) => ns.kill(p.pid));
 }

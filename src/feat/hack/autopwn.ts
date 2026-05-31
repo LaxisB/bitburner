@@ -1,6 +1,6 @@
 /* eslint-disable no-empty */
-import { crawlServers } from '../lib/servers';
-import { HOME, Ports } from '../lib/constants';
+import { crawlServers } from '../../lib/servers';
+import { HOME, Ports } from '../../lib/constants';
 import type { NS } from '@ns';
 import type { LogEvent } from '@/domain';
 

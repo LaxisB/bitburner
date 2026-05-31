@@ -1,3 +1,6 @@
+/**
+ * buy and upgrade hacknet nodes for income
+ */
 import type { NS } from '@ns';
 
 export async function main(ns: NS) {
@@ -22,7 +25,6 @@ export async function main(ns: NS) {
 	while (true) {
 		let bought = false;
 
-		// Priority 1: buy a new node
 		if (ns.hacknet.numNodes() < maxNodes) {
 			await waitForROI();
 			const cost = ns.hacknet.getPurchaseNodeCost();
@@ -33,7 +35,6 @@ export async function main(ns: NS) {
 		}
 
 		if (!bought) {
-			// Priority 2-4: level all → RAM all → core all
 			outer: for (const getUpgrade of [
 				(i: number) => [ns.hacknet.getLevelUpgradeCost(i, 1), () => ns.hacknet.upgradeLevel(i)] as const,
 				(i: number) => [ns.hacknet.getRamUpgradeCost(i, 1), () => ns.hacknet.upgradeRam(i)] as const,

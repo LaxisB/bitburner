@@ -1,10 +1,10 @@
 import type { NS } from '@ns';
 
 const AUTO_LAUNCH = [
-	'infra/autopwn.js',
-	'infra/servers.js',
-	'feat/metrics.js',
+	'feat/cloud.js',
+	'feat/hack/autopwn.js',
 	'feat/hack/orchestrator.js',
+	'feat/dashboard.js',
 	'feat/hacknet.js',
 	//  'feat/stocks.js',
 ];

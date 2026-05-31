@@ -1,22 +1,24 @@
 import { crawlServers } from '@/lib/servers';
+import { ensureSingleton } from '@/lib/utils';
 import type { NS, Player, Server } from '@ns';
 import { BLACKLIST, updateBlacklist } from './blacklist';
 import {
-	cleanPendingTasks,
 	EXECUTOR_SCRIPTS,
+	SCRIPT_COST,
+	ScheduleStrategy,
+	cleanPendingTasks,
 	getMaxRam,
 	getRam,
 	runningTasks,
 	scheduleBatch,
-	ScheduleStrategy,
 	scheduleTask,
-	SCRIPT_COST,
 } from './scheduler';
 import { getBatch, scoreTarget } from './task-selection';
 
 let servers: Server[];
 
 export async function main(ns: NS) {
+	ensureSingleton(ns);
 	BLACKLIST.clear();
 	ns.disableLog('ALL');
 

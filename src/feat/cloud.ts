@@ -1,11 +1,11 @@
-import type { LogEvent, ServerDeathEvent } from '@/domain';
+/**
+ * buy and upgrade cloud servers to run scripts on
+ */
+import type { LogEvent } from '@/domain';
 import { Ports } from '@/lib/constants';
 import type { NS } from '@ns';
 const prefix = 'NODE';
 
-/**
- * continuously buys / upgrades servers to run scipts on
- */
 export async function main(ns: NS) {
 	ns.disableLog('ALL');
 	const max = ns.cloud.getServerLimit();
@@ -36,7 +36,6 @@ export async function main(ns: NS) {
 		if (servers.length >= max && deletionCandidate) {
 			ns.writePort(Ports.Servers, { added: true, host: deletionCandidate.hostname });
 			ns.killall(deletionCandidate.hostname);
-			ns.writePort(Ports.Metrics, { type: 'serverdeath', host: deletionCandidate.hostname } satisfies ServerDeathEvent);
 			const res = ns.cloud.deleteServer(deletionCandidate.hostname);
 			if (!res) {
 				ns.printf("couldn't delete...");
