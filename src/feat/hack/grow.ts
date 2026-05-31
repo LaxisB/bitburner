@@ -1,5 +1,4 @@
 import type { ExecEndEvent, ExecStartEvent } from '@/domain';
-import { Ports } from '@/lib/constants';
 import type { NS } from '@ns';
 import type { ExecutorArgs } from './domain';
 
@@ -17,7 +16,8 @@ export async function main(ns: NS) {
 
 	ns.ramOverride(1.75);
 
-	ns.writePort(Ports.Metrics, {
+	// don't use Ports from constants file. it's not available on the target
+	ns.writePort(2, {
 		type: 'exec_start',
 		pid: ns.pid,
 		func: 'grow',
@@ -30,7 +30,7 @@ export async function main(ns: NS) {
 
 	await ns.grow(args.target, { threads: args.threads, additionalMsec: args.delay });
 
-	ns.writePort(Ports.Metrics, {
+	ns.writePort(2, {
 		type: 'exec_end',
 		pid: ns.pid,
 		func: 'grow',
