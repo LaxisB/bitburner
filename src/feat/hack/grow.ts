@@ -1,17 +1,10 @@
-import type { ExecStartEvent, ExecEndEvent } from '@/domain';
+import type { ExecEndEvent, ExecStartEvent } from '@/domain';
+import { Ports } from '@/lib/constants';
 import type { NS } from '@ns';
-
-interface Args {
-	threads: number;
-	delay: number;
-	duration: number;
-	runner: string;
-	target: string;
-	_?: string[];
-}
+import type { ExecutorArgs } from './domain';
 
 export async function main(ns: NS) {
-	const args: Args = ns.flags([
+	const args: ExecutorArgs = ns.flags([
 		['threads', 1],
 		['delay', 0],
 		['duration', 0],
@@ -24,7 +17,7 @@ export async function main(ns: NS) {
 
 	ns.ramOverride(1.75);
 
-	ns.writePort(2, {
+	ns.writePort(Ports.Metrics, {
 		type: 'exec_start',
 		pid: ns.pid,
 		func: 'grow',
@@ -37,7 +30,7 @@ export async function main(ns: NS) {
 
 	await ns.grow(args.target, { threads: args.threads, additionalMsec: args.delay });
 
-	ns.writePort(2, {
+	ns.writePort(Ports.Metrics, {
 		type: 'exec_end',
 		pid: ns.pid,
 		func: 'grow',

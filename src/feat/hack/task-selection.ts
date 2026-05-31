@@ -1,6 +1,6 @@
 import type { NS, Player, Server } from '@ns';
 import type { Task } from './domain';
-import { runningTasks, SCRIPT_COST } from './scheduler';
+import { SCRIPT_COST, runningTasks } from './scheduler';
 
 export function getWeaken(ns: NS, server: Server): Task {
 	const secCurr = ns.getServerSecurityLevel(server.hostname);
@@ -38,7 +38,7 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 	}
 
 	const secDelta = ns.weakenAnalyze(1);
-	const weaken1Threads = Math.ceil(getWeaken(ns, server).threads);
+	const weaken1Threads = getWeaken(ns, server).threads;
 
 	const growthThreads = Math.ceil(
 		formulasAvailable

@@ -3,12 +3,12 @@ import { ensureSingleton } from '@/lib/utils';
 import type { NS, Player, Server } from '@ns';
 import { BLACKLIST, updateBlacklist } from './blacklist';
 import {
-	EXECUTOR_SCRIPTS,
 	SCRIPT_COST,
 	ScheduleStrategy,
 	cleanPendingTasks,
 	getMaxRam,
 	getRam,
+	refreshRunners,
 	runningTasks,
 	scheduleBatch,
 	scheduleTask,
@@ -41,6 +41,7 @@ async function loop(ns: NS) {
 	const player = ns.getPlayer();
 	const targets = getTargets(ns, servers, player);
 	const runners = getRunners(servers);
+	const getRunnerThreads = (runner: Server) => Math.max(0, Math.floor(getRam(runner) / SCRIPT_COST));
 
 	const targetBatches = targets.map((target) => {
 		const batch = getBatch(ns, target, player);
@@ -51,7 +52,6 @@ async function loop(ns: NS) {
 	for (let i = 0; i < targetBatches.length; i++) {
 		const { target, batch, threads } = targetBatches[i];
 
-		const getRunnerThreads = (runner: Server) => Math.max(0, Math.floor(getRam(runner) / SCRIPT_COST));
 		const maxThreads = runners.reduce((a, c) => a + getRunnerThreads(c), 0);
 
 		if (!batch?.length || threads > maxThreads) {
@@ -60,14 +60,7 @@ async function loop(ns: NS) {
 
 		const success = scheduleBatch(ns, batch, runners, ScheduleStrategy.AS_SPECIFIED);
 		if (!success) {
-			// Refresh runner RAM state — killed tasks freed RAM but runner objects are stale
-			for (const runner of runners) {
-				try {
-					Object.assign(runner, { ramUsed: ns.getServer(runner.hostname).ramUsed });
-				} catch {
-					Object.assign(runner, { ramUsed: runner.maxRam });
-				}
-			}
+			refreshRunners(ns, runners);
 			ns.print(`WARN miscalculated batch feasability for ${target.hostname} (${threads}/${maxThreads} threads)`);
 			continue;
 		}
@@ -75,10 +68,7 @@ async function loop(ns: NS) {
 		targetBatches[i].scheduled = true;
 		ns.print(`SUCCESS scheduled batch for ${target.hostname} (${threads} threads)`);
 		await ns.sleep(100);
-		// Refresh runner RAM after sleep — other scripts may have consumed RAM during the pause
-		for (const runner of runners) {
-			Object.assign(runner, { ramUsed: ns.getServer(runner.hostname).ramUsed });
-		}
+		refreshRunners(ns, runners);
 	}
 
 	// Guard: partial tasks must not steal RAM that full batches need.
@@ -97,7 +87,6 @@ async function loop(ns: NS) {
 	// this way, we can guarantee some results, because doing partial work on the max batch is kinda useless
 	for (const { target, batch, scheduled } of targetBatches.slice().reverse()) {
 		if (!batch?.length || scheduled) continue;
-		const getRunnerThreads = (runner: Server) => Math.max(0, Math.floor(getRam(runner) / SCRIPT_COST));
 		const maxThreads = runners.reduce((a, c) => a + getRunnerThreads(c), 0);
 
 		if (maxThreads < 1 || partialThreadBudget < 1) continue;
@@ -127,14 +116,17 @@ function getRunners(servers: Server[]) {
 }
 
 function getTargets(ns: NS, servers: Server[], player: Player) {
+	const hackLevel = ns.getHackingLevel();
 	return servers
 		.filter(
 			(x) =>
 				x &&
 				!x.purchasedByPlayer &&
 				x.hasAdminRights &&
-				ns.getServerRequiredHackingLevel(x.hostname) <= ns.getHackingLevel() &&
+				ns.getServerRequiredHackingLevel(x.hostname) <= hackLevel &&
 				(x.moneyMax ?? 0) > 0,
 		)
-		.sort((a, b) => scoreTarget(ns, b, player) - scoreTarget(ns, a, player));
+		.map((x) => ({ server: x, score: scoreTarget(ns, x, player) }))
+		.sort((a, b) => b.score - a.score)
+		.map((x) => x.server);
 }

@@ -1,5 +1,14 @@
 import type { Server } from '@ns';
 
+export interface ExecutorArgs {
+	threads: number;
+	delay: number;
+	duration: number;
+	runner: string;
+	target: string;
+	_?: string[];
+}
+
 export interface ExtendedServerStats extends Server {
 	tasks: ScheduledTask[];
 }

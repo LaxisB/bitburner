@@ -1,8 +1,8 @@
+import type { LogEvent } from '@/domain';
+import type { NS } from '@ns';
+import { HOME, Ports } from '../../lib/constants';
 /* eslint-disable no-empty */
 import { crawlServers } from '../../lib/servers';
-import { HOME, Ports } from '../../lib/constants';
-import type { NS } from '@ns';
-import type { LogEvent } from '@/domain';
 
 /**
  * automatically gains root on all possible targets

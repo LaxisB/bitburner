@@ -129,6 +129,12 @@ export function scheduleTask(
 	return pids;
 }
 
+export function refreshRunners(ns: NS, runners: Server[]) {
+	for (const runner of runners) {
+		Object.assign(runner, { ramUsed: safeGetRamUsed(ns, runner.hostname, runner.maxRam) });
+	}
+}
+
 export function cleanPendingTasks(ns: NS) {
 	runningTasks.forEach((tasks, target) => {
 		runningTasks.set(
@@ -141,7 +147,7 @@ export function cleanPendingTasks(ns: NS) {
 function executeTask(ns: NS, task: ScheduledTask) {
 	const args = ['threads', 'delay', 'duration', 'target', 'runner']
 		//biome-ignore lint/suspicious/noExplicitAny:
-		.filter((key) => !!(task as any)[key])
+		.filter((key) => (task as any)[key] != null)
 		.flatMap((key) => [`--${key}`, (task as unknown as Record<string, unknown>)[key]]);
 	const script = EXECUTOR_SCRIPTS[task.action];
 	// wrap in try-catch no never block execution
