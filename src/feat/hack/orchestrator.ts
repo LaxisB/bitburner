@@ -1,4 +1,4 @@
-import { crawlServers } from '@/lib/servers';
+import { crawlServers } from '@/lib/network';
 import { ensureSingleton } from '@/lib/utils';
 import type { NS, Player, Server } from '@ns';
 import { BLACKLIST, updateBlacklist } from './blacklist';

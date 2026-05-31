@@ -6,6 +6,7 @@ const AUTO_LAUNCH = [
 	'feat/hack/orchestrator.js',
 	'feat/dashboard.js',
 	'feat/hacknet.js',
+	'feat/share.js',
 	//  'feat/stocks.js',
 ];
 

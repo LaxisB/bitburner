@@ -1,8 +1,7 @@
 import type { LogEvent } from '@/domain';
 import type { NS } from '@ns';
 import { HOME, Ports } from '../../lib/constants';
-/* eslint-disable no-empty */
-import { crawlServers } from '../../lib/servers';
+import { crawlServers } from '../../lib/network';
 
 /**
  * automatically gains root on all possible targets
@@ -47,7 +46,8 @@ export async function main(ns: NS) {
 		if (serverspwned.length) {
 			ns.writePort(Ports.Metrics, {
 				type: 'log',
-				message: `pwned ${serverspwned.join(',').slice(0, 50)}...`,
+				message:
+					`pwned ${serverspwned.slice(0, 2).join(', ')} ${serverspwned.length > 2 ? `and ${serverspwned.length - 2} more` : ''}`.trim(),
 			} satisfies LogEvent);
 		}
 
