@@ -73,7 +73,7 @@ export function scheduleTask(
 		const possibleThreads = Math.floor(getRam(runner) / SCRIPT_COST);
 		if (possibleThreads < 1) return [];
 		const threads = Math.min(requestedThreads, possibleThreads);
-		const scheduled: ScheduledTask = { ...task, runner: runner.hostname, threads, pid: -1 };
+		const scheduled: ScheduledTask = { ...task, runner: runner.hostname, threads, pid: -1, startTime: Date.now() };
 		const pid = executeTask(ns, scheduled);
 		if (!pid) return [];
 		scheduled.pid = pid;
@@ -106,7 +106,7 @@ export function scheduleTask(
 		}
 
 		const threads = Math.min(requestedThreads - scheduledThreads, possibleThreads);
-		const scheduled: ScheduledTask = { ...task, runner: runner.hostname, threads, pid: -1 };
+		const scheduled: ScheduledTask = { ...task, runner: runner.hostname, threads, pid: -1, startTime: Date.now() };
 		const pid = executeTask(ns, scheduled);
 		scheduled.pid = pid;
 		if (pid) {

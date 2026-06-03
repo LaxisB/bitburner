@@ -1,6 +1,6 @@
 import { crawlServers } from '@/lib/network';
 import { ensureSingleton } from '@/lib/utils';
-import type { NS, Player, Server } from '@ns';
+import type { NS, Server } from '@ns';
 import { BLACKLIST, updateBlacklist } from './blacklist';
 import {
 	SCRIPT_COST,
@@ -13,7 +13,7 @@ import {
 	scheduleBatch,
 	scheduleTask,
 } from './scheduler';
-import { getBatch, scoreTarget } from './task-selection';
+import { getBatch, getMaxConcurrentBatches, scoreTarget } from './task-selection';
 
 let servers: Server[];
 
@@ -38,13 +38,12 @@ async function loop(ns: NS) {
 	cleanPendingTasks(ns);
 
 	servers = await crawlServers(ns, 'home');
-	const player = ns.getPlayer();
-	const targets = getTargets(ns, servers, player);
+	const targets = getTargets(ns, servers);
 	const runners = getRunners(servers);
 	const getRunnerThreads = (runner: Server) => Math.max(0, Math.floor(getRam(runner) / SCRIPT_COST));
 
 	const targetBatches = targets.map((target) => {
-		const batch = getBatch(ns, target, player);
+		const batch = getBatch(ns, target);
 		const threads = batch?.reduce((a, c) => a + c.threads, 0) ?? 0;
 		return { target, batch, threads, scheduled: false };
 	});
@@ -76,16 +75,22 @@ async function loop(ns: NS) {
 	// then give partials only the leftover.
 	const totalMaxRam = runners.reduce((a, c) => a + getMaxRam(c), 0);
 	let simAvailable = totalMaxRam;
-	for (const { threads } of targetBatches) {
+	for (const { target, batch, threads } of targetBatches) {
+		if (!batch?.length) continue;
 		const batchRam = threads * SCRIPT_COST;
-		if (batchRam <= simAvailable) simAvailable -= batchRam;
+		const pending = runningTasks.get(target.hostname);
+		const pendingBatchCount = pending?.filter((t) => t.action === 'hack').length ?? 0;
+		const toReserve = Math.max(1, getMaxConcurrentBatches(ns, target) - pendingBatchCount);
+		for (let i = 0; i < toReserve; i++) {
+			if (batchRam <= simAvailable) simAvailable -= batchRam;
+			else break;
+		}
 	}
 	let partialThreadBudget = Math.floor(simAvailable / SCRIPT_COST);
 
 	// No full batch scheduled - schedule a capped partial task to prep or generate income
-	// we're starting from the smallest batch, and work our way up.
-	// this way, we can guarantee some results, because doing partial work on the max batch is kinda useless
-	for (const { target, batch, scheduled } of targetBatches.slice().reverse()) {
+	// since our batches are prioritized, start with the largest non-scheduled batch.
+	for (const { target, batch, scheduled } of targetBatches.slice()) {
 		if (!batch?.length || scheduled) continue;
 		const maxThreads = runners.reduce((a, c) => a + getRunnerThreads(c), 0);
 
@@ -108,14 +113,14 @@ async function loop(ns: NS) {
 		);
 	}
 
-	await ns.sleep(1000);
+	await ns.sleep(100);
 }
 
 function getRunners(servers: Server[]) {
 	return servers.filter((x) => x.hasAdminRights).sort((a, b) => getRam(b) - getRam(a));
 }
 
-function getTargets(ns: NS, servers: Server[], player: Player) {
+function getTargets(ns: NS, servers: Server[]) {
 	const hackLevel = ns.getHackingLevel();
 	return servers
 		.filter(
@@ -126,7 +131,7 @@ function getTargets(ns: NS, servers: Server[], player: Player) {
 				ns.getServerRequiredHackingLevel(x.hostname) <= hackLevel &&
 				(x.moneyMax ?? 0) > 0,
 		)
-		.map((x) => ({ server: x, score: scoreTarget(ns, x, player) }))
+		.map((x) => ({ server: x, score: scoreTarget(ns, x) }))
 		.sort((a, b) => b.score - a.score)
 		.map((x) => x.server);
 }

@@ -1,7 +1,12 @@
-import type { NS, Player, Server } from '@ns';
-import type { Task } from './domain';
+import type { NS, Server } from '@ns';
+import type { ScheduledTask, Task } from './domain';
 import { SCRIPT_COST, runningTasks } from './scheduler';
 
+const INTER_BATCH_GAP = 50;
+const PIPELINE_BUFFER = 200;
+const BATCH_SPAN = 300; // ms from first to last task finish within a single batch
+
+/** build a basic weaken task */
 export function getWeaken(ns: NS, server: Server): Task {
 	const secCurr = ns.getServerSecurityLevel(server.hostname);
 	const secMin = ns.getServerMinSecurityLevel(server.hostname);
@@ -10,56 +15,59 @@ export function getWeaken(ns: NS, server: Server): Task {
 	return {
 		action: 'weaken',
 		target: server.hostname,
-		duration: ns.getHackTime(server.hostname) * 3.2,
+		duration: ns.getHackTime(server.hostname) * 4,
 		threads,
 	};
 }
 
-export function getBatch(ns: NS, server: Server, player: Player): Task[] | null {
-	const pending = runningTasks.get(server.hostname);
+/** projects the expected server state after applying given tasks */
+export function projectServerState(ns: NS, server: Server, tasks: Task[]): Server {
+	const projected = { ...server };
+	const sorted = [...tasks].sort((a, b) => (a.delay ?? 0) + a.duration - ((b.delay ?? 0) + b.duration));
 
-	//TODO if we were smart, we'd forecast the result of our pending tasks and already queue the next one
-	if (pending?.length) {
-		return null;
+	for (const task of sorted) {
+		if (task.action === 'weaken') {
+			const reduction = task.threads * ns.weakenAnalyze(1);
+			projected.hackDifficulty = Math.max(projected.minDifficulty ?? 0, (projected.hackDifficulty ?? 0) - reduction);
+		} else if (task.action === 'grow') {
+			projected.moneyAvailable = Math.min(
+				projected.moneyMax ?? 0,
+				(projected.moneyAvailable ?? 0) * (1 + task.threads * 0.03),
+			);
+			projected.hackDifficulty = Math.min(
+				100,
+				(projected.hackDifficulty ?? 0) + ns.growthAnalyzeSecurity(task.threads),
+			);
+		} else if (task.action === 'hack') {
+			const pct = ns.hackAnalyze(server.hostname);
+			projected.moneyAvailable = Math.max(0, (projected.moneyAvailable ?? 0) * (1 - task.threads * pct));
+			projected.hackDifficulty = Math.min(
+				100,
+				(projected.hackDifficulty ?? 0) + ns.hackAnalyzeSecurity(task.threads, server.hostname),
+			);
+		}
 	}
 
-	let hackTime: number;
-	let weakenTime: number;
-	let growTime: number;
-	const formulasAvailable = hasFormulas(ns);
-	if (formulasAvailable) {
-		weakenTime = ns.formulas.hacking.weakenTime(server, player);
-		growTime = ns.formulas.hacking.growTime(server, player);
-		hackTime = ns.formulas.hacking.hackTime(server, player);
-	} else {
-		hackTime = ns.getHackTime(server.hostname);
-		weakenTime = hackTime * 4;
-		growTime = hackTime * 3.2;
-	}
+	return projected;
+}
+
+/** build a set of tasks to run a full WGWH batch on target server */
+function buildBatch(ns: NS, server: Server): Task[] {
+	const hackTime = ns.getHackTime(server.hostname);
+	const weakenTime = hackTime * 4;
+	const growTime = hackTime * 3.2;
 
 	const secDelta = ns.weakenAnalyze(1);
-	const weaken1Threads = getWeaken(ns, server).threads;
+	const weaken1Threads = Math.floor(((server.hackDifficulty ?? 0) - (server.minDifficulty ?? 0)) / secDelta);
 
 	const growthThreads = Math.ceil(
-		formulasAvailable
-			? ns.formulas.hacking.growThreads(server, player, server.moneyMax ?? Number.MAX_SAFE_INTEGER)
-			: ns.growthAnalyze(server.hostname, (server.moneyMax ?? 1) / Math.max(1, server.moneyAvailable ?? 1)),
+		ns.growthAnalyze(server.hostname, (server.moneyMax ?? 1) / Math.max(1, server.moneyAvailable ?? 1)),
 	);
 
 	const growthEffect = ns.growthAnalyzeSecurity(growthThreads);
 	const weaken2Threads = Math.ceil(growthEffect / secDelta);
 
-	// factor to multiply our required hack threads with to handle hacking failures
-	// we're adjusting the 'raw' factor down by 1x in case we high roll.
-	const failureFactor = formulasAvailable
-		? Math.max(1, Math.floor(1 / ns.formulas.hacking.hackChance(server, player)) - 1)
-		: 1;
-
-	const rawHackThreadsRequired = formulasAvailable
-		? 100 / ns.formulas.hacking.hackPercent(server, player)
-		: 1 / ns.hackAnalyze(server.hostname);
-
-	const hackThreads = Math.ceil(rawHackThreadsRequired * failureFactor);
+	const hackThreads = Math.ceil(1 / ns.hackAnalyze(server.hostname));
 
 	const weaken1: Task = {
 		action: 'weaken',
@@ -67,7 +75,6 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 		threads: weaken1Threads,
 		duration: weakenTime,
 	};
-
 	const grow: Task = {
 		action: 'grow',
 		target: server.hostname,
@@ -95,22 +102,53 @@ export function getBatch(ns: NS, server: Server, player: Player): Task[] | null 
 	return [weaken1, grow, weaken2, ...(isEmpty ? [] : [hack])].filter((t) => t.threads > 0);
 }
 
-export function scoreTarget(ns: NS, server: Server, player: Player): number {
+/** get a ready-to-run batch for a given server. this batch is automatically adjusted to factor in running tasks  */
+export function getBatch(ns: NS, server: Server): Task[] | null {
+	const pending = runningTasks.get(server.hostname) as ScheduledTask[] | undefined;
+
+	if (!pending?.length) {
+		return buildBatch(ns, server);
+	}
+
+	const absFinish = (t: ScheduledTask) => t.startTime + (t.delay ?? 0) + t.duration;
+	const windowStart = Math.min(...pending.map(absFinish));
+	const windowEnd = Math.max(...pending.map(absFinish));
+
+	const projected = projectServerState(ns, server, pending);
+	const batch = buildBatch(ns, projected);
+	if (!batch.length) return null;
+
+	const firstOff = Math.min(...batch.map((t) => (t.delay ?? 0) + t.duration));
+	const lastOff = Math.max(...batch.map((t) => (t.delay ?? 0) + t.duration));
+
+	// Pipeline-full: the new batch's last task would land beyond one batch duration past windowStart
+	const projectedNewEnd = windowEnd + INTER_BATCH_GAP + (lastOff - firstOff);
+	if (projectedNewEnd > windowStart + lastOff + PIPELINE_BUFFER) {
+		return null;
+	}
+
+	// Shift all tasks so this batch's first-finishing task lands just after the current window end
+	const now = Date.now();
+	const offset = Math.max(0, windowEnd + INTER_BATCH_GAP - now - firstOff);
+
+	return batch.map((t) => ({ ...t, delay: (t.delay ?? 0) + offset }));
+}
+
+/** get the number of batches we can theoretically schedule concurrently without overlapping */
+export function getMaxConcurrentBatches(ns: NS, server: Server): number {
+	const weakenTime = ns.getHackTime(server.hostname) * 4;
+	return Math.max(1, Math.floor((weakenTime + PIPELINE_BUFFER) / (BATCH_SPAN + INTER_BATCH_GAP)));
+}
+
+/** assign a numerical score for the target regarding how interesting it is.
+ * in short, were trying to optimize profit per ram */
+export function scoreTarget(ns: NS, server: Server): number {
 	if (!server.moneyMax) return 0;
 	const hostname = server.hostname;
-	const formulasAvailable = hasFormulas(ns);
 
-	const peakServer = formulasAvailable
-		? { ...server, hackDifficulty: server.minDifficulty, moneyAvailable: server.moneyMax }
-		: server;
-
-	const hackPercent = formulasAvailable
-		? ns.formulas.hacking.hackPercent(peakServer, player)
-		: ns.hackAnalyze(hostname);
-	const hackTime = formulasAvailable ? ns.formulas.hacking.hackTime(peakServer, player) : ns.getHackTime(hostname);
-	const hackChance = formulasAvailable
-		? ns.formulas.hacking.hackChance(peakServer, player)
-		: ns.hackAnalyzeChance(hostname);
+	const hackPercent = ns.hackAnalyze(hostname);
+	const hackTime = ns.getHackTime(hostname);
+	const hackChance = ns.hackAnalyzeChance(hostname);
 
 	if (!hackPercent || !hackTime) return 0;
 
@@ -122,27 +160,10 @@ export function scoreTarget(ns: NS, server: Server, player: Player): number {
 	const weaken1Threads = Math.ceil(ns.hackAnalyzeSecurity(hackThreads, hostname) / secDelta);
 
 	const growRatio = 1 / (1 - Math.min(actualFraction, 0.999));
-	const growThreads = formulasAvailable
-		? Math.ceil(
-				ns.formulas.hacking.growThreads(
-					{ ...peakServer, moneyAvailable: (server.moneyMax ?? 0) * (1 - actualFraction) },
-					player,
-					server.moneyMax ?? 0,
-				),
-			)
-		: Math.ceil(ns.growthAnalyze(hostname, growRatio));
+	const growThreads = Math.ceil(ns.growthAnalyze(hostname, growRatio));
 	const weaken2Threads = Math.ceil(ns.growthAnalyzeSecurity(growThreads) / secDelta);
 
 	const totalThreads = hackThreads + weaken1Threads + growThreads + weaken2Threads;
 	const moneyPerCycle = (server.moneyMax ?? 0) * actualFraction * hackChance;
 	return moneyPerCycle / hackTime / (totalThreads * SCRIPT_COST);
-}
-
-export function hasFormulas(ns: NS) {
-	try {
-		ns.formulas.hacking.weakenTime(ns.getServer('foodnstuff'), ns.getPlayer());
-		return true;
-	} catch {
-		return false;
-	}
 }

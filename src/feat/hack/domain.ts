@@ -25,4 +25,5 @@ export interface Task {
 export interface ScheduledTask extends Task {
 	runner: string;
 	pid: number;
+	startTime: number;
 }
