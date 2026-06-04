@@ -24,13 +24,10 @@ export async function main(ns: NS) {
 			pow += 1;
 		} while (ns.cloud.getServerCost(2 ** pow) < maxCost);
 		const targetRam = 2 ** (pow - 1);
-		if (targetRam < 8) {
-			return; // we only want to buy servers with at least 8gb of ram.
-		}
 
-		if (servers.length >= max && targetRam <= servers[0].ram) {
+		if (targetRam < 8 || (servers.length >= max && targetRam <= servers[0].ram)) {
 			// not an increase
-			await ns.sleep(300_000);
+			await ns.sleep(60_000);
 			continue;
 		}
 
@@ -53,6 +50,5 @@ export async function main(ns: NS) {
 			} satisfies LogEvent);
 			ns.print(`INFO ${message}`);
 		}
-		await ns.sleep(60_000);
 	}
 }
