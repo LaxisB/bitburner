@@ -6,6 +6,9 @@ const INTER_BATCH_GAP = 50;
 const PIPELINE_BUFFER = 200;
 const BATCH_SPAN = 300; // ms from first to last task finish within a single batch
 
+export const HACK_FRACTION = 1; // fraction of available money to steal per batch (0.0–1.0)
+export const GROW_TARGET = 1; // fraction of max money to grow to per batch (0.0–1.0)
+
 /** projects the expected server state after applying given tasks */
 function projectServerState(ns: NS, server: Server, tasks: Task[]): Server {
 	const projected = { ...server };
@@ -46,14 +49,16 @@ function buildBatch(ns: NS, server: Server): Task[] {
 	const secDelta = ns.weakenAnalyze(1);
 	const weaken1Threads = Math.floor(((server.hackDifficulty ?? 0) - (server.minDifficulty ?? 0)) / secDelta);
 
-	const growthThreads = Math.ceil(
-		ns.growthAnalyze(server.hostname, (server.moneyMax ?? 1) / Math.max(1, server.moneyAvailable ?? 1)),
-	);
+	const growTarget = (server.moneyMax ?? 1) * GROW_TARGET;
+	const growFrom = Math.max(1, server.moneyAvailable ?? 1);
+	const growMultiplier = growTarget / growFrom;
+	const growthThreads = growMultiplier > 1 ? Math.ceil(ns.growthAnalyze(server.hostname, growMultiplier)) : 0;
 
 	const growthEffect = ns.growthAnalyzeSecurity(growthThreads);
 	const weaken2Threads = Math.ceil(growthEffect / secDelta);
 
-	const hackThreads = Math.ceil(1 / ns.hackAnalyze(server.hostname));
+	const hackPct = ns.hackAnalyze(server.hostname) * ns.hackAnalyzeChance(server.hostname);
+	const hackThreads = Math.ceil(HACK_FRACTION / hackPct);
 
 	const weaken1: Task = {
 		action: 'weaken',
