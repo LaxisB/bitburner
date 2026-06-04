@@ -1,6 +1,5 @@
 import type { Event, ExecStartEvent } from '@/domain';
 import { Ports } from '@/lib/constants';
-import { formatDuration } from '@/lib/format';
 import { crawlServers } from '@/lib/network';
 import { ensureSingleton, queueRead } from '@/lib/utils';
 import type { NS, Server } from '@ns';
@@ -85,8 +84,8 @@ function logState(ns: NS, servers: Server[], params: { full: boolean }) {
 	ns.printf('Script Income: %-10s\tScript Exp: %-10s', ns.format.number(scriptIncome), ns.format.number(scriptExp));
 
 	const totalRam = servers.filter((s) => s.hasAdminRights).reduce((a, s) => a + s.maxRam, 0);
-	const bar = ramBar(tasks.values(), { width: 40, totalRam });
-	ns.print(`RAM utilization: ${bar}`);
+	const bar = ramBar(tasks.values(), { width: 45, totalRam });
+	ns.print(`RAM: ${bar}`);
 
 	if (params.full) {
 		const taskByTarget = new Map<string, { next: number; weaken: number; grow: number; hack: number }>();
@@ -119,7 +118,6 @@ function logState(ns: NS, servers: Server[], params: { full: boolean }) {
 					moneyPct: (money / moneyMax) * 100,
 					sec: fresh.hackDifficulty ?? 0,
 					minSec: fresh.minDifficulty ?? 0,
-					duration: task ? formatDuration(task.next) : '-',
 					weaken: task?.weaken ?? 0,
 					grow: task?.grow ?? 0,
 					hack: task?.hack ?? 0,
@@ -128,24 +126,22 @@ function logState(ns: NS, servers: Server[], params: { full: boolean }) {
 			})
 			.filter((s) => s.weaken || s.hack || s.grow); // only show servers with active tasks
 		ns.printf(
-			'%-20s %10s %6s %6s %10s %6s %6s %6s %10s',
+			'%-20s %10s %6s %6s %6s %6s %6s %10s',
 			'Server',
 			'Money',
 			'%',
 			'Sec↓',
-			'Next',
 			'W',
 			'G',
 			'H',
 			'Hist',
 		);
 		ns.printf(
-			'%-20s %10s %6s %6s %10s %4s %4s %4s %10s',
+			'%-20s %10s %6s %6s %6s %6s %6s %10s',
 			'--------------------',
 			'----------',
 			'------',
 			'------',
-			'----------',
 			'------',
 			'------',
 			'------',
@@ -153,15 +149,14 @@ function logState(ns: NS, servers: Server[], params: { full: boolean }) {
 		);
 		for (const r of serverRows) {
 			ns.printf(
-				'%-20s %10s %5.1f%% %6.2f %10s %6i %6i %6i %10s',
+				'%-20s %10s %5.1f%% %6.2f %6s %6s %6s %10s',
 				r.hostname,
 				ns.format.number(r.money),
 				r.moneyPct,
 				r.sec - r.minSec,
-				r.duration,
-				r.weaken,
-				r.grow,
-				r.hack,
+				r.weaken || '',
+				r.grow || '',
+				r.hack || '',
 				r.history,
 			);
 		}
