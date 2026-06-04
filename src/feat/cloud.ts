@@ -30,7 +30,7 @@ export async function main(ns: NS) {
 
 		if (servers.length >= max && targetRam <= servers[0].ram) {
 			// not an increase
-			await ns.sleep(10_000);
+			await ns.sleep(300_000);
 			continue;
 		}
 
@@ -39,29 +39,20 @@ export async function main(ns: NS) {
 		if (servers.length >= max && deletionCandidate) {
 			ns.writePort(Ports.Servers, { added: true, host: deletionCandidate.hostname });
 			ns.killall(deletionCandidate.hostname);
-			const res = ns.cloud.deleteServer(deletionCandidate.hostname);
-			if (!res) {
-				ns.printf("couldn't delete...");
-				ns.writePort(Ports.Servers, { added: false, host: deletionCandidate.hostname });
-				await ns.sleep(10_000);
-				continue;
-			}
+			ns.cloud.deleteServer(deletionCandidate.hostname);
 			deletedSmallest = true;
+			ns.writePort(Ports.Servers, { added: false, host: deletionCandidate.hostname });
 		}
 
 		const newServer = ns.cloud.purchaseServer(prefix, targetRam);
-		if (deletionCandidate && deletedSmallest) {
-			ns.writePort(Ports.Servers, { added: false, host: deletionCandidate.hostname });
-		}
 		if (newServer) {
-			ns.writePort(Ports.Servers, { added: false, host: newServer });
-
+			const message = `${deletedSmallest ? `Upgraded from a ${ns.format.ram(deletionCandidate.ram)} to` : 'Bought a'} a ${ns.format.ram(targetRam)} Server`;
 			ns.writePort(Ports.Metrics, {
 				type: 'log',
-				message: `${deletedSmallest ? `Upgraded from a ${ns.format.ram(deletionCandidate.ram)} to` : 'Bought a'} a ${ns.format.ram(targetRam)} Server`,
+				message,
 			} satisfies LogEvent);
-			ns.print(`INFO bought ${newServer} ${deletedSmallest ? '(replacing the smallest)' : ''}`);
+			ns.print(`INFO ${message}`);
 		}
-		await ns.sleep(5_000);
+		await ns.sleep(60_000);
 	}
 }
