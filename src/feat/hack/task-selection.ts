@@ -7,7 +7,7 @@ const PIPELINE_BUFFER = 200;
 const BATCH_SPAN = 300; // ms from first to last task finish within a single batch
 
 /** build a basic weaken task */
-export function getWeaken(ns: NS, server: Server): Task {
+function getWeaken(ns: NS, server: Server): Task {
 	const secCurr = ns.getServerSecurityLevel(server.hostname);
 	const secMin = ns.getServerMinSecurityLevel(server.hostname);
 	const secDelta = ns.weakenAnalyze(1);
@@ -21,7 +21,7 @@ export function getWeaken(ns: NS, server: Server): Task {
 }
 
 /** projects the expected server state after applying given tasks */
-export function projectServerState(ns: NS, server: Server, tasks: Task[]): Server {
+function projectServerState(ns: NS, server: Server, tasks: Task[]): Server {
 	const projected = { ...server };
 	const sorted = [...tasks].sort((a, b) => (a.delay ?? 0) + a.duration - ((b.delay ?? 0) + b.duration));
 

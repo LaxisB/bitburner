@@ -6,6 +6,7 @@ export const EXECUTOR_SCRIPTS: Record<string, string> = {
 	grow: '/feat/hack/grow.js',
 	weaken: '/feat/hack/weaken.js',
 };
+const EXECUTOR_DEP = '/feat/hack/executor.js';
 export const SCRIPT_COST = 1.75;
 export const HOST_RAM_BLOCKER: Record<string, number> = {
 	home: 64,
@@ -77,7 +78,7 @@ export function scheduleTask(
 		const pid = executeTask(ns, scheduled);
 		if (!pid) return [];
 		scheduled.pid = pid;
-		Object.assign(runner, { ramUsed: safeGetRamUsed(ns, runner.hostname, runner.maxRam) });
+		refreshRunners(ns, [runner]);
 		const running = runningTasks.get(task.target) ?? [];
 		running.push(scheduled);
 		runningTasks.set(task.target, running);
@@ -110,7 +111,7 @@ export function scheduleTask(
 		const pid = executeTask(ns, scheduled);
 		scheduled.pid = pid;
 		if (pid) {
-			Object.assign(runner, { ramUsed: safeGetRamUsed(ns, runner.hostname, runner.maxRam) });
+			refreshRunners(ns, [runner]);
 			const running = runningTasks.get(task.target) ?? [];
 			running.push(scheduled);
 			runningTasks.set(task.target, running);
@@ -150,11 +151,12 @@ function executeTask(ns: NS, task: ScheduledTask) {
 		.filter((key) => (task as any)[key] != null)
 		.flatMap((key) => [`--${key}`, (task as unknown as Record<string, unknown>)[key]]);
 	const script = EXECUTOR_SCRIPTS[task.action];
-	// wrap in try-catch no never block execution
+	// wrap in try-catch to never block execution
 	try {
-		if (!ns.fileExists(script, task.runner)) {
-			ns.print(`WARN ${script} missing on ${task.runner}, re-scp'ing`);
-			ns.scp(script, task.runner, 'home');
+		const missing = [script, EXECUTOR_DEP].filter((s) => !ns.fileExists(s, task.runner));
+		if (missing.length) {
+			ns.print(`WARN missing on ${task.runner}: ${missing.join(', ')}, re-scp'ing`);
+			ns.scp(missing, task.runner, 'home');
 		}
 	} catch {}
 	//biome-ignore lint/suspicious/noExplicitAny:

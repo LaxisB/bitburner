@@ -1,43 +1,11 @@
-import type { ExecEndEvent, ExecStartEvent } from '@/domain';
 import type { NS } from '@ns';
-import type { ExecutorArgs } from './domain';
+import { emitExec, parseArgs } from './executor';
 
 export async function main(ns: NS) {
-	const args: ExecutorArgs = ns.flags([
-		['threads', 1],
-		['delay', 0],
-		['duration', 0],
-		['runner', ''],
-		['target', ''],
-		// biome-ignore lint:
-	]) as any;
-
+	const args = parseArgs(ns);
 	if (!args.target) return;
-
 	ns.ramOverride(1.7);
-
-	// don't use Ports from constants file. it's not available on the target
-	ns.writePort(2, {
-		type: 'exec_start',
-		pid: ns.pid,
-		func: 'hack',
-		threads: args.threads,
-		duration: args.duration,
-		delay: args.delay,
-		target: args.target,
-		runner: args.runner,
-	} satisfies ExecStartEvent);
-
+	emitExec(ns, 'exec_start', 'hack', args);
 	await ns.hack(args.target, { threads: args.threads, additionalMsec: args.delay });
-
-	ns.writePort(2, {
-		type: 'exec_end',
-		pid: ns.pid,
-		func: 'hack',
-		threads: args.threads,
-		duration: args.duration,
-		delay: args.delay,
-		target: args.target,
-		runner: args.runner,
-	} satisfies ExecEndEvent);
+	emitExec(ns, 'exec_end', 'hack', args);
 }

@@ -2,6 +2,7 @@ import { crawlServers } from '@/lib/network';
 import { ensureSingleton } from '@/lib/utils';
 import type { NS, Server } from '@ns';
 import { BLACKLIST, updateBlacklist } from './blacklist';
+import type { Task } from './domain';
 import {
 	SCRIPT_COST,
 	ScheduleStrategy,
@@ -40,7 +41,6 @@ async function loop(ns: NS) {
 	servers = await crawlServers(ns, 'home');
 	const targets = getTargets(ns, servers);
 	const runners = getRunners(servers);
-	const getRunnerThreads = (runner: Server) => Math.max(0, Math.floor(getRam(runner) / SCRIPT_COST));
 
 	const targetBatches = targets.map((target) => {
 		const batch = getBatch(ns, target);
@@ -70,27 +70,11 @@ async function loop(ns: NS) {
 		refreshRunners(ns, runners);
 	}
 
-	// Guard: partial tasks must not steal RAM that full batches need.
-	// Greedily simulate batch packing to find how much RAM full batches can actually claim,
-	// then give partials only the leftover.
-	const totalMaxRam = runners.reduce((a, c) => a + getMaxRam(c), 0);
-	let simAvailable = totalMaxRam;
-	for (const { target, batch, threads } of targetBatches) {
-		if (!batch?.length) continue;
-		const batchRam = threads * SCRIPT_COST;
-		const pending = runningTasks.get(target.hostname);
-		const pendingBatchCount = pending?.filter((t) => t.action === 'hack').length ?? 0;
-		const toReserve = Math.max(1, getMaxConcurrentBatches(ns, target) - pendingBatchCount);
-		for (let i = 0; i < toReserve; i++) {
-			if (batchRam <= simAvailable) simAvailable -= batchRam;
-			else break;
-		}
-	}
-	let partialThreadBudget = Math.floor(simAvailable / SCRIPT_COST);
+	let partialThreadBudget = computePartialBudget(ns, runners, targetBatches);
 
-	// No full batch scheduled - schedule a capped partial task to prep or generate income
-	// since our batches are prioritized, start with the largest non-scheduled batch.
-	for (const { target, batch, scheduled } of targetBatches.slice()) {
+	// No full batch scheduled — schedule a capped partial task to prep or generate income.
+	// Batches are prioritized by score, so start with the largest non-scheduled one.
+	for (const { target, batch, scheduled } of targetBatches) {
 		if (!batch?.length || scheduled) continue;
 		const maxThreads = runners.reduce((a, c) => a + getRunnerThreads(c), 0);
 
@@ -114,6 +98,33 @@ async function loop(ns: NS) {
 	}
 
 	await ns.sleep(100);
+}
+
+/** Simulate greedy batch packing to find how many threads are left for partial tasks.
+ * Prevents partials from stealing RAM that full batches need. */
+function computePartialBudget(
+	ns: NS,
+	runners: Server[],
+	targetBatches: Array<{ target: Server; batch: Task[] | null; threads: number }>,
+): number {
+	const totalMaxRam = runners.reduce((a, c) => a + getMaxRam(c), 0);
+	let simAvailable = totalMaxRam;
+	for (const { target, batch, threads } of targetBatches) {
+		if (!batch?.length) continue;
+		const batchRam = threads * SCRIPT_COST;
+		const pending = runningTasks.get(target.hostname);
+		const pendingBatchCount = pending?.filter((t) => t.action === 'hack').length ?? 0;
+		const toReserve = Math.max(1, getMaxConcurrentBatches(ns, target) - pendingBatchCount);
+		for (let i = 0; i < toReserve; i++) {
+			if (batchRam <= simAvailable) simAvailable -= batchRam;
+			else break;
+		}
+	}
+	return Math.floor(simAvailable / SCRIPT_COST);
+}
+
+function getRunnerThreads(runner: Server): number {
+	return Math.max(0, Math.floor(getRam(runner) / SCRIPT_COST));
 }
 
 function getRunners(servers: Server[]) {
