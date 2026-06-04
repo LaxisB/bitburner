@@ -1,15 +1,11 @@
 import type { NS, Server } from '@ns';
-import type { ScheduledTask, Task } from './domain';
+import { type ScheduledTask, SCRIPT_COST, type Task } from './domain';
+import { getRam, readRamUsed, syncRamUsed } from './servers';
 
 export const EXECUTOR_SCRIPTS: Record<string, string> = {
 	hack: '/feat/hack/hack.js',
 	grow: '/feat/hack/grow.js',
 	weaken: '/feat/hack/weaken.js',
-};
-const EXECUTOR_DEP = '/feat/hack/executor.js';
-export const SCRIPT_COST = 1.75;
-export const HOST_RAM_BLOCKER: Record<string, number> = {
-	home: 64,
 };
 
 export enum ScheduleStrategy {
@@ -19,23 +15,6 @@ export enum ScheduleStrategy {
 }
 
 export const runningTasks = new Map<string, ScheduledTask[]>();
-
-/**
- * getRamUsed() function that refreshes server state to handle some of our nodes being replaced in the background
- */
-const safeGetRamUsed = (ns: NS, hostname: string, fallback: number) => {
-	try {
-		return ns.getServer(hostname).ramUsed;
-	} catch {
-		return fallback;
-	}
-};
-
-/**
- * returns the available ram on the target server
- */
-export const getRam = (server: Server) => server.maxRam - server.ramUsed - (HOST_RAM_BLOCKER[server.hostname] ?? 0);
-export const getMaxRam = (server: Server) => server.maxRam - (HOST_RAM_BLOCKER[server.hostname] ?? 0);
 
 export function scheduleBatch(
 	ns: NS,
@@ -78,7 +57,7 @@ export function scheduleTask(
 		const pid = executeTask(ns, scheduled);
 		if (!pid) return [];
 		scheduled.pid = pid;
-		refreshRunners(ns, [runner]);
+		syncRamUsed(ns, [runner]);
 		const running = runningTasks.get(task.target) ?? [];
 		running.push(scheduled);
 		runningTasks.set(task.target, running);
@@ -111,14 +90,14 @@ export function scheduleTask(
 		const pid = executeTask(ns, scheduled);
 		scheduled.pid = pid;
 		if (pid) {
-			refreshRunners(ns, [runner]);
+			syncRamUsed(ns, [runner]);
 			const running = runningTasks.get(task.target) ?? [];
 			running.push(scheduled);
 			runningTasks.set(task.target, running);
 			pids.push(pid);
 			scheduledThreads += threads;
 		} else {
-			const ramFree = runner.maxRam - safeGetRamUsed(ns, runner.hostname, runner.maxRam);
+			const ramFree = runner.maxRam - readRamUsed(ns, runner.hostname, runner.maxRam);
 			ns.print(
 				`WARN exec failed on ${runner.hostname}: requested=${threads}t (${(threads * SCRIPT_COST).toFixed(2)}GB), actual ramFree=${ramFree.toFixed(2)}GB, script=${EXECUTOR_SCRIPTS[task.action]}`,
 			);
@@ -130,13 +109,7 @@ export function scheduleTask(
 	return pids;
 }
 
-export function refreshRunners(ns: NS, runners: Server[]) {
-	for (const runner of runners) {
-		Object.assign(runner, { ramUsed: safeGetRamUsed(ns, runner.hostname, runner.maxRam) });
-	}
-}
-
-export function cleanPendingTasks(ns: NS) {
+export function dropDeadTasks(ns: NS) {
 	runningTasks.forEach((tasks, target) => {
 		runningTasks.set(
 			target,
@@ -153,10 +126,11 @@ function executeTask(ns: NS, task: ScheduledTask) {
 	const script = EXECUTOR_SCRIPTS[task.action];
 	// wrap in try-catch to never block execution
 	try {
-		const missing = [script, EXECUTOR_DEP].filter((s) => !ns.fileExists(s, task.runner));
-		if (missing.length) {
-			ns.print(`WARN missing on ${task.runner}: ${missing.join(', ')}, re-scp'ing`);
-			ns.scp(missing, task.runner, 'home');
+		const missing = !ns.fileExists(script, task.runner);
+
+		if (true) {
+			ns.print(`INFO script missing on ${task.runner}. copying`);
+			ns.scp(script, task.runner, 'home');
 		}
 	} catch {}
 	//biome-ignore lint/suspicious/noExplicitAny:

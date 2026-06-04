@@ -1,24 +1,10 @@
 import type { NS, Server } from '@ns';
 import type { ScheduledTask, Task } from './domain';
-import { SCRIPT_COST, runningTasks } from './scheduler';
+import { runningTasks } from './scheduler';
 
 const INTER_BATCH_GAP = 50;
 const PIPELINE_BUFFER = 200;
 const BATCH_SPAN = 300; // ms from first to last task finish within a single batch
-
-/** build a basic weaken task */
-function getWeaken(ns: NS, server: Server): Task {
-	const secCurr = ns.getServerSecurityLevel(server.hostname);
-	const secMin = ns.getServerMinSecurityLevel(server.hostname);
-	const secDelta = ns.weakenAnalyze(1);
-	const threads = Math.floor((secCurr - secMin) / secDelta);
-	return {
-		action: 'weaken',
-		target: server.hostname,
-		duration: ns.getHackTime(server.hostname) * 4,
-		threads,
-	};
-}
 
 /** projects the expected server state after applying given tasks */
 function projectServerState(ns: NS, server: Server, tasks: Task[]): Server {
@@ -138,32 +124,4 @@ export function getBatch(ns: NS, server: Server): Task[] | null {
 export function getMaxConcurrentBatches(ns: NS, server: Server): number {
 	const weakenTime = ns.getHackTime(server.hostname) * 4;
 	return Math.max(1, Math.floor((weakenTime + PIPELINE_BUFFER) / (BATCH_SPAN + INTER_BATCH_GAP)));
-}
-
-/** assign a numerical score for the target regarding how interesting it is.
- * in short, were trying to optimize profit per ram */
-export function scoreTarget(ns: NS, server: Server): number {
-	if (!server.moneyMax) return 0;
-	const hostname = server.hostname;
-
-	const hackPercent = ns.hackAnalyze(hostname);
-	const hackTime = ns.getHackTime(hostname);
-	const hackChance = ns.hackAnalyzeChance(hostname);
-
-	if (!hackPercent || !hackTime) return 0;
-
-	const HACK_FRACTION = 0.5;
-	const hackThreads = Math.ceil(HACK_FRACTION / hackPercent);
-	const actualFraction = hackThreads * hackPercent;
-
-	const secDelta = ns.weakenAnalyze(1);
-	const weaken1Threads = Math.ceil(ns.hackAnalyzeSecurity(hackThreads, hostname) / secDelta);
-
-	const growRatio = 1 / (1 - Math.min(actualFraction, 0.999));
-	const growThreads = Math.ceil(ns.growthAnalyze(hostname, growRatio));
-	const weaken2Threads = Math.ceil(ns.growthAnalyzeSecurity(growThreads) / secDelta);
-
-	const totalThreads = hackThreads + weaken1Threads + growThreads + weaken2Threads;
-	const moneyPerCycle = (server.moneyMax ?? 0) * actualFraction * hackChance;
-	return moneyPerCycle / hackTime / (totalThreads * SCRIPT_COST);
 }

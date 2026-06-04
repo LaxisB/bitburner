@@ -2,19 +2,10 @@ import { crawlServers } from '@/lib/network';
 import { ensureSingleton } from '@/lib/utils';
 import type { NS, Server } from '@ns';
 import { BLACKLIST, updateBlacklist } from './blacklist';
-import type { Task } from './domain';
-import {
-	SCRIPT_COST,
-	ScheduleStrategy,
-	cleanPendingTasks,
-	getMaxRam,
-	getRam,
-	refreshRunners,
-	runningTasks,
-	scheduleBatch,
-	scheduleTask,
-} from './scheduler';
-import { getBatch, getMaxConcurrentBatches, scoreTarget } from './task-selection';
+import { SCRIPT_COST, type Task } from './domain';
+import { ScheduleStrategy, dropDeadTasks, runningTasks, scheduleBatch, scheduleTask } from './scheduler';
+import { getMaxRam, getRam, getRunners, getTargets, syncRamUsed } from './servers';
+import { getBatch, getMaxConcurrentBatches } from './task-selection';
 
 let servers: Server[];
 
@@ -36,7 +27,7 @@ async function loop(ns: NS) {
 		ns.print('INFO server de-blacklisted — restarting orchestrator');
 		ns.spawn('feat/hack/orchestrator.js');
 	}
-	cleanPendingTasks(ns);
+	dropDeadTasks(ns);
 
 	servers = await crawlServers(ns, 'home');
 	const targets = getTargets(ns, servers);
@@ -59,7 +50,7 @@ async function loop(ns: NS) {
 
 		const success = scheduleBatch(ns, batch, runners, ScheduleStrategy.AS_SPECIFIED);
 		if (!success) {
-			refreshRunners(ns, runners);
+			syncRamUsed(ns, runners);
 			ns.print(`WARN miscalculated batch feasability for ${target.hostname} (${threads}/${maxThreads} threads)`);
 			continue;
 		}
@@ -67,7 +58,7 @@ async function loop(ns: NS) {
 		targetBatches[i].scheduled = true;
 		ns.print(`SUCCESS scheduled batch for ${target.hostname} (${threads} threads)`);
 		await ns.sleep(100);
-		refreshRunners(ns, runners);
+		syncRamUsed(ns, runners);
 	}
 
 	let partialThreadBudget = computePartialBudget(ns, runners, targetBatches);
@@ -125,24 +116,4 @@ function computePartialBudget(
 
 function getRunnerThreads(runner: Server): number {
 	return Math.max(0, Math.floor(getRam(runner) / SCRIPT_COST));
-}
-
-function getRunners(servers: Server[]) {
-	return servers.filter((x) => x.hasAdminRights).sort((a, b) => getRam(b) - getRam(a));
-}
-
-function getTargets(ns: NS, servers: Server[]) {
-	const hackLevel = ns.getHackingLevel();
-	return servers
-		.filter(
-			(x) =>
-				x &&
-				!x.purchasedByPlayer &&
-				x.hasAdminRights &&
-				ns.getServerRequiredHackingLevel(x.hostname) <= hackLevel &&
-				(x.moneyMax ?? 0) > 0,
-		)
-		.map((x) => ({ server: x, score: scoreTarget(ns, x) }))
-		.sort((a, b) => b.score - a.score)
-		.map((x) => x.server);
 }
