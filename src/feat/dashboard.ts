@@ -5,6 +5,8 @@ import { crawlServers } from '@/lib/network';
 import { ensureSingleton, queueRead } from '@/lib/utils';
 import type { NS, Server } from '@ns';
 
+const RAM_COST: Record<string, number> = { grow: 1.75, weaken: 1.75, hack: 1.75, share: 4 };
+
 const tasks = new Map<string, ExecStartEvent & { time: number }>();
 const recentByTarget = new Map<string, string>();
 let events = ['', '', '', '', ''] as string[];
@@ -82,6 +84,10 @@ function logState(ns: NS, servers: Server[], params: { full: boolean }) {
 	const hackLevel = ns.getHackingLevel();
 	ns.printf('Script Income: %-10s\tScript Exp: %-10s', ns.format.number(scriptIncome), ns.format.number(scriptExp));
 
+	const totalRam = servers.filter((s) => s.hasAdminRights).reduce((a, s) => a + s.maxRam, 0);
+	const bar = ramBar(tasks.values(), { width: 40, totalRam });
+	ns.print(`RAM utilization: ${bar}`);
+
 	if (params.full) {
 		const taskByTarget = new Map<string, { next: number; weaken: number; grow: number; hack: number }>();
 		tasks.forEach((t) => {
@@ -119,7 +125,8 @@ function logState(ns: NS, servers: Server[], params: { full: boolean }) {
 					hack: task?.hack ?? 0,
 					history: recentByTarget.get(fresh.hostname) ?? '',
 				};
-			});
+			})
+			.filter((s) => s.weaken || s.hack || s.grow); // only show servers with active tasks
 		ns.printf(
 			'%-20s %10s %6s %6s %10s %6s %6s %6s %10s',
 			'Server',
@@ -162,4 +169,31 @@ function logState(ns: NS, servers: Server[], params: { full: boolean }) {
 
 	ns.print('\n ');
 	events.forEach((e) => ns.print(e));
+}
+function ramBar(tasks: Iterable<ExecStartEvent & { time: number }>, opts: { width: number; totalRam: number }): string {
+	const inner = opts.width - 2;
+	const ramBy: Record<string, number> = {};
+	for (const t of tasks) {
+		const cost = RAM_COST[t.func] ?? 1.75;
+		ramBy[t.func] = (ramBy[t.func] ?? 0) + t.threads * cost;
+	}
+
+	const charFor: Record<string, string> = { grow: 'g', weaken: 'w', hack: 'h', share: 's' };
+	const order = ['grow', 'weaken', 'hack', 'share'];
+	let bar = '';
+	let filled = 0;
+
+	for (const action of order) {
+		const slots = Math.round(((ramBy[action] ?? 0) / opts.totalRam) * inner);
+		bar += (charFor[action] ?? '?').repeat(slots);
+		filled += slots;
+	}
+	for (const [action, ram] of Object.entries(ramBy)) {
+		if (order.includes(action)) continue;
+		const slots = Math.round((ram / opts.totalRam) * inner);
+		bar += '?'.repeat(slots);
+		filled += slots;
+	}
+	bar += ' '.repeat(Math.max(0, inner - filled));
+	return `[${bar}]`;
 }
