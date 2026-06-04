@@ -67,10 +67,12 @@ async function loop(ns: NS) {
 	// Batches are prioritized by score, so start with the largest non-scheduled one.
 	for (const { target, batch, scheduled } of targetBatches) {
 		if (!batch?.length || scheduled) continue;
+		if (runningTasks.get(target.hostname)?.length) continue;
 		const maxThreads = runners.reduce((a, c) => a + getRunnerThreads(c), 0);
 
 		if (maxThreads < 1 || partialThreadBudget < 1) continue;
-		const task = batch.find((t) => t.threads >= 1);
+		const atMinSecurity = (target.hackDifficulty ?? 0) <= (target.minDifficulty ?? 0) + 0.001;
+		const task = batch.find((t) => t.threads >= 1 && !(atMinSecurity && t.action === 'weaken'));
 		if (!task) continue;
 
 		const threadsToSchedule = Math.min(Math.floor(task.threads), partialThreadBudget);
@@ -83,9 +85,6 @@ async function loop(ns: NS) {
 			continue;
 		}
 		partialThreadBudget -= threadsToSchedule;
-		ns.print(
-			`SUCCESS partial[${task.label ?? task.action}] for ${target.hostname} (threads: ${threadsToSchedule}/${Math.floor(task.threads)}, budget left: ${partialThreadBudget})`,
-		);
 	}
 
 	await ns.sleep(100);
