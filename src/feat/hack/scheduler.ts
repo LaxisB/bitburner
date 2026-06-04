@@ -127,8 +127,7 @@ function executeTask(ns: NS, task: ScheduledTask) {
 	// wrap in try-catch to never block execution
 	try {
 		const missing = !ns.fileExists(script, task.runner);
-
-		if (true) {
+		if (missing) {
 			ns.print(`INFO script missing on ${task.runner}. copying`);
 			ns.scp(script, task.runner, 'home');
 		}
