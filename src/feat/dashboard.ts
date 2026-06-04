@@ -70,7 +70,7 @@ function updateState(ns: NS) {
 	// Remove tasks whose deadline has long passed; usually orphaned by killed scripts that never sent exec_end
 	const now = Date.now();
 	tasks.forEach((t, key) => {
-		if (t.time + (t.delay ?? 0) + (t.duration ?? 0) < now - 10_000) tasks.delete(key);
+		if (t.time + (t.delay ?? 0) + (t.duration ?? 0) < now - 2_000) tasks.delete(key);
 	});
 
 	events = events.slice(-5);
