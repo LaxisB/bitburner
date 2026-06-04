@@ -170,30 +170,46 @@ function logState(ns: NS, servers: Server[], params: { full: boolean }) {
 	ns.print('\n ');
 	events.forEach((e) => ns.print(e));
 }
-function ramBar(tasks: Iterable<ExecStartEvent & { time: number }>, opts: { width: number; totalRam: number }): string {
-	const inner = opts.width - 2;
+type RamBarOpts = {
+	width: number;
+	totalRam: number;
+	chars?: Partial<Record<string, string>>;
+	colors?: Partial<Record<string, string>>;
+};
+
+const DEFAULT_CHARS: Record<string, string> = { grow: 'g', weaken: 'w', hack: 'h', share: 's' };
+const DEFAULT_COLORS: Record<string, string> = {
+	grow: '\x1b[32m',
+	weaken: '\x1b[36m',
+	hack: '\x1b[31m',
+	share: '\x1b[33m',
+};
+const RESET = '\x1b[0m';
+
+function ramBar(tasks: Iterable<ExecStartEvent & { time: number }>, opts: RamBarOpts): string {
+	const { width, totalRam, chars = DEFAULT_CHARS, colors = DEFAULT_COLORS } = opts;
+	const inner = width - 2;
 	const ramBy: Record<string, number> = {};
 	for (const t of tasks) {
 		const cost = RAM_COST[t.func] ?? 1.75;
 		ramBy[t.func] = (ramBy[t.func] ?? 0) + t.threads * cost;
 	}
 
-	const charFor: Record<string, string> = { grow: 'g', weaken: 'w', hack: 'h', share: 's' };
-	const order = ['grow', 'weaken', 'hack', 'share'];
+	const order = ['weaken', 'grow', 'hack', 'share'];
+	const allActions = [...order, ...Object.keys(ramBy).filter((a) => !order.includes(a))];
 	let bar = '';
 	let filled = 0;
 
-	for (const action of order) {
-		const slots = Math.round(((ramBy[action] ?? 0) / opts.totalRam) * inner);
-		bar += (charFor[action] ?? '?').repeat(slots);
+	for (const action of allActions) {
+		const ram = ramBy[action] ?? 0;
+		if (ram === 0 || filled >= inner) continue;
+		const slots = Math.min(inner - filled, Math.round((ram / totalRam) * inner));
+		if (slots <= 0) continue;
+		const char = (chars[action] ?? '?')[0];
+		const color = colors[action] ?? '';
+		bar += color + char.repeat(slots) + (color ? RESET : '');
 		filled += slots;
 	}
-	for (const [action, ram] of Object.entries(ramBy)) {
-		if (order.includes(action)) continue;
-		const slots = Math.round((ram / opts.totalRam) * inner);
-		bar += '?'.repeat(slots);
-		filled += slots;
-	}
-	bar += ' '.repeat(Math.max(0, inner - filled));
+	bar += ' '.repeat(inner - filled);
 	return `[${bar}]`;
 }
