@@ -34,7 +34,7 @@ function maybeStartShare(ns: NS, server: Server) {
 		ns.scp(SHARE_SCRIPT, server.hostname, 'home');
 	}
 
-	const pid = ns.exec(SHARE_SCRIPT, server.hostname, threads);
+	const pid = ns.exec(SHARE_SCRIPT, server.hostname, threads, '--runner', server.hostname, '--threads', threads);
 	if (pid) {
 		ns.print(`SUCCESS share on ${server.hostname} (${threads} threads)`);
 	} else {
