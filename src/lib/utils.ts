@@ -37,5 +37,8 @@ export async function queueReadAsync(ns: NS, queue: number, cb: (data: unknown) 
 export async function ensureSingleton(ns: NS) {
 	ns.ps()
 		.filter((p) => p.filename === ns.getScriptName() && p.pid !== ns.pid)
-		.forEach((p) => ns.kill(p.pid));
+		.forEach((p) => {
+			ns.ui.closeTail(p.pid);
+			ns.kill(p.pid);
+		});
 }

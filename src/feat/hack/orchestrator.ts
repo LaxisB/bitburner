@@ -1,4 +1,4 @@
-import { LogEvent } from '@/domain';
+import type { LogEvent } from '@/domain';
 import { Ports } from '@/lib/constants';
 import { crawlServers } from '@/lib/network';
 import { ensureSingleton } from '@/lib/utils';

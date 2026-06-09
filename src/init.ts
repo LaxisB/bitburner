@@ -1,5 +1,5 @@
 import type { NS, ScriptArg } from '@ns';
-import { LogEvent } from './domain';
+import type { LogEvent } from './domain';
 import { Ports } from './lib/constants';
 
 const AUTO_LAUNCH: [string, ScriptArg[]][] = [
