@@ -5,6 +5,7 @@ import { ensureSingleton, queueRead } from '@/lib/utils';
 import type { NS, Server } from '@ns';
 
 const RAM_COST: Record<string, number> = { grow: 1.75, weaken: 1.75, hack: 1.75, share: 4 };
+const LOG_LENGTH = 10;
 
 const tasks = new Map<string, ExecStartEvent & { time: number }>();
 const recentByTarget = new Map<string, string>();
@@ -72,7 +73,7 @@ function updateState(ns: NS) {
 		if (t.time + (t.delay ?? 0) + (t.duration ?? 0) < now - 2_000) tasks.delete(key);
 	});
 
-	events = events.slice(-5);
+	events = events.slice(-LOG_LENGTH);
 	return count > 0;
 }
 
@@ -125,17 +126,7 @@ function logState(ns: NS, servers: Server[], params: { full: boolean }) {
 				};
 			})
 			.filter((s) => s.weaken || s.hack || s.grow); // only show servers with active tasks
-		ns.printf(
-			'%-20s %10s %6s %6s %6s %6s %6s %10s',
-			'Server',
-			'Money',
-			'%',
-			'Sec↓',
-			'W',
-			'G',
-			'H',
-			'Hist',
-		);
+		ns.printf('%-20s %10s %6s %6s %6s %6s %6s %10s', 'Server', 'Money', '%', 'Sec↓', 'W', 'G', 'H', 'Hist');
 		ns.printf(
 			'%-20s %10s %6s %6s %6s %6s %6s %10s',
 			'--------------------',
@@ -160,9 +151,9 @@ function logState(ns: NS, servers: Server[], params: { full: boolean }) {
 				r.history,
 			);
 		}
+		ns.print('\n ');
 	}
 
-	ns.print('\n ');
 	events.forEach((e) => ns.print(e));
 }
 type RamBarOpts = {

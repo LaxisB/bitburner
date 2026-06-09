@@ -1,10 +1,12 @@
 /**
  * buy and upgrade hacknet nodes for income
  */
+import { ensureSingleton } from '@/lib/utils';
 import type { NS } from '@ns';
 
 export async function main(ns: NS) {
 	ns.disableLog('ALL');
+	ensureSingleton(ns);
 	const maxNodes = ns.hacknet.maxNumNodes();
 	let totalSpent = 0;
 

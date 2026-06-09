@@ -1,3 +1,4 @@
+import { ensureSingleton } from '@/lib/utils';
 import type { NS, Stock } from '@ns';
 
 type Sym = { sym: string; long?: number; short?: number; profit?: number };
@@ -5,6 +6,7 @@ type Sym = { sym: string; long?: number; short?: number; profit?: number };
 /** @param {NS} ns */
 export async function main(ns: NS) {
 	const logsToDisable = ['sleep', 'getServerMoneyAvailable', 'stock.buyStock'];
+	ensureSingleton(ns);
 	logsToDisable.forEach((l) => ns.disableLog(l));
 	let is4SigmaAvailable = true;
 	try {

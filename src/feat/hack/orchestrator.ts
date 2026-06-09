@@ -1,3 +1,5 @@
+import { LogEvent } from '@/domain';
+import { Ports } from '@/lib/constants';
 import { crawlServers } from '@/lib/network';
 import { ensureSingleton } from '@/lib/utils';
 import type { NS, Server } from '@ns';
@@ -57,6 +59,10 @@ async function loop(ns: NS) {
 
 		targetBatches[i].scheduled = true;
 		ns.print(`SUCCESS scheduled batch for ${target.hostname} (${threads} threads)`);
+		ns.writePort(Ports.Metrics, {
+			type: 'log',
+			message: `+BATCH ${target.hostname} ${threads}`,
+		} satisfies LogEvent);
 		await ns.sleep(100);
 		syncRamUsed(ns, runners);
 	}
