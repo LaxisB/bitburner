@@ -1,5 +1,5 @@
 import type { NS, Server } from '@ns';
-import { type ScheduledTask, SCRIPT_COST, type Task } from './domain';
+import { SCRIPT_COST, type ScheduledTask, type Task } from './domain';
 import { getRam, readRamUsed, syncRamUsed } from './servers';
 
 export const EXECUTOR_SCRIPTS: Record<string, string> = {
@@ -21,18 +21,18 @@ export function scheduleBatch(
 	tasks: Task[],
 	runners: Server[],
 	strategy = ScheduleStrategy.AS_SPECIFIED,
-): boolean {
+): number[] {
 	let pids: number[] = [];
 	for (const task of tasks) {
 		if (!task.threads) continue;
 		const taskPids = scheduleTask(ns, task, runners, strategy);
-		if (!taskPids.length) {
+		if (!taskPids.length && strategy === ScheduleStrategy.AS_SPECIFIED) {
 			pids.forEach((pid) => ns.kill(pid));
-			return false;
+			return [];
 		}
 		pids = pids.concat(taskPids);
 	}
-	return true;
+	return pids;
 }
 
 export function scheduleTask(

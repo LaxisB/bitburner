@@ -1,5 +1,5 @@
 import type { NS, Server } from '@ns';
-import type { ScheduledTask, Task } from './domain';
+import { SCRIPT_COST, type ScheduledTask, type Task } from './domain';
 import { runningTasks } from './scheduler';
 
 const INTER_BATCH_GAP = 50;
@@ -7,7 +7,35 @@ const PIPELINE_BUFFER = 200;
 const BATCH_SPAN = 300; // ms from first to last task finish within a single batch
 
 export const HACK_FRACTION = 1; // fraction of available money to steal per batch (0.0–1.0)
-export const GROW_TARGET = 1; // fraction of max money to grow to per batch (0.0–1.0)
+
+export function scoreTarget(ns: NS, server: Server): number {
+	if (!server.moneyMax) return 0;
+	const hostname = server.hostname;
+
+	const hackPercent = ns.hackAnalyze(hostname);
+	const hackTime = ns.getHackTime(hostname);
+	const hackChance = ns.hackAnalyzeChance(hostname);
+
+	if (!hackPercent || !hackTime) return 0;
+
+	const hackPct = hackPercent * hackChance;
+	const hackThreads = Math.ceil(HACK_FRACTION / hackPct);
+	const expectedHackedMoneyFraction = hackThreads * hackPct;
+
+	const secDelta = ns.weakenAnalyze(1);
+	const weaken1Threads = Math.ceil(ns.hackAnalyzeSecurity(hackThreads, hostname) / secDelta);
+
+	const moneyAfterHack = Math.max(1, server.moneyMax * (1 - expectedHackedMoneyFraction));
+	const growRatio = server.moneyMax / moneyAfterHack;
+	const growThreads = Math.ceil(ns.growthAnalyze(hostname, growRatio));
+	const weaken2Threads = Math.ceil(ns.growthAnalyzeSecurity(growThreads) / secDelta);
+
+	const totalThreads = hackThreads + weaken1Threads + growThreads + weaken2Threads;
+	const totalCost = totalThreads * SCRIPT_COST;
+	const moneyPerCycle = server.moneyMax * expectedHackedMoneyFraction;
+	// return moneyPerCycle / hackTime / (totalThreads * SCRIPT_COST);
+	return moneyPerCycle / hackTime;
+}
 
 /** projects the expected server state after applying given tasks */
 function projectServerState(ns: NS, server: Server, tasks: Task[]): Server {
@@ -49,7 +77,7 @@ function buildBatch(ns: NS, server: Server): Task[] {
 	const secDelta = ns.weakenAnalyze(1);
 	const weaken1Threads = Math.floor(((server.hackDifficulty ?? 0) - (server.minDifficulty ?? 0)) / secDelta);
 
-	const growTarget = (server.moneyMax ?? 1) * GROW_TARGET;
+	const growTarget = (server.moneyMax ?? 1) * HACK_FRACTION;
 	const growFrom = Math.max(1, server.moneyAvailable ?? 1);
 	const growMultiplier = growTarget / growFrom;
 	const growthThreads = growMultiplier > 1 ? Math.ceil(ns.growthAnalyze(server.hostname, growMultiplier)) : 0;

@@ -7,7 +7,7 @@ import { BLACKLIST, updateBlacklist } from './blacklist';
 import { SCRIPT_COST, type Task } from './domain';
 import { ScheduleStrategy, dropDeadTasks, runningTasks, scheduleBatch, scheduleTask } from './scheduler';
 import { getMaxRam, getRam, getRunners, getTargets, syncRamUsed } from './servers';
-import { getBatch, getMaxConcurrentBatches } from './task-selection';
+import { getBatch, getMaxConcurrentBatches, scoreTarget } from './task-selection';
 
 let servers: Server[];
 
@@ -15,9 +15,7 @@ export async function main(ns: NS) {
 	ensureSingleton(ns);
 	BLACKLIST.clear();
 	ns.disableLog('ALL');
-
 	runningTasks.clear();
-
 	ns.print('INFO starting loop');
 	while (true) {
 		await loop(ns);
@@ -26,13 +24,13 @@ export async function main(ns: NS) {
 
 async function loop(ns: NS) {
 	if (updateBlacklist(ns)) {
-		ns.print('INFO server de-blacklisted — restarting orchestrator');
-		ns.spawn('feat/hack/orchestrator.js');
+		BLACKLIST.clear();
+		runningTasks.clear();
 	}
 	dropDeadTasks(ns);
 
 	servers = await crawlServers(ns, 'home');
-	const targets = getTargets(ns, servers);
+	const targets = getTargets(ns, servers, scoreTarget);
 	const runners = getRunners(servers);
 
 	const targetBatches = targets.map((target) => {
@@ -73,20 +71,17 @@ async function loop(ns: NS) {
 	// Batches are prioritized by score, so start with the largest non-scheduled one.
 	for (const { target, batch, scheduled } of targetBatches) {
 		if (!batch?.length || scheduled) continue;
-		if (runningTasks.get(target.hostname)?.length) continue;
+
 		const maxThreads = runners.reduce((a, c) => a + getRunnerThreads(c), 0);
 
 		if (maxThreads < 1 || partialThreadBudget < 1) continue;
-		const atMinSecurity = (target.hackDifficulty ?? 0) <= (target.minDifficulty ?? 0) + 0.001;
-		const task = batch.find((t) => t.threads >= 1 && !(atMinSecurity && t.action === 'weaken'));
-		if (!task) continue;
 
-		const threadsToSchedule = Math.min(Math.floor(task.threads), partialThreadBudget);
-		const cappedTask = { ...task, threads: threadsToSchedule };
-		const pids = scheduleTask(ns, cappedTask, runners, ScheduleStrategy.MAX_POSSIBLE);
+		const batchThreads = Math.floor(batch.reduce((a, b) => a + b.threads, 0));
+		const threadsToSchedule = Math.min(batchThreads, partialThreadBudget);
+		const pids = scheduleBatch(ns, batch, runners, ScheduleStrategy.MAX_POSSIBLE);
 		if (!pids.length) {
 			ns.print(
-				`WARN partial[${task.label ?? task.action}] FAILED for ${target.hostname} (threads: ${threadsToSchedule}/${Math.floor(task.threads)}, budget: ${partialThreadBudget})`,
+				`WARN partial FAILED for ${target.hostname} (threads: ${threadsToSchedule}/${Math.floor(batchThreads)}, budget: ${partialThreadBudget})`,
 			);
 			continue;
 		}
