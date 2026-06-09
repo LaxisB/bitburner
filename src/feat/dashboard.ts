@@ -54,9 +54,19 @@ function updateState(ns: NS) {
 				if (prev.at(-1) !== char) recentByTarget.set(msg.target, (prev + char).slice(-10));
 				break;
 			}
-			case 'log':
+			case 'log': {
+				const lastLog = events[events.length - 1];
+				// skip logging if it's `+BATCH <server>` twice in a row
+				if (
+					msg.message.startsWith('+BATCH') &&
+					lastLog.startsWith('+BATCH') &&
+					msg.message.split(' ')[1] == lastLog.split(' ')[1]
+				) {
+					break;
+				}
 				events.push(msg.message);
 				break;
+			}
 			case 'serverdeath':
 				tasks.forEach((t) => {
 					if (t.runner === msg.host) {

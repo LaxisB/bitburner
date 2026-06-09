@@ -45,6 +45,8 @@ async function processContracts(ns: NS): Promise<void> {
 					log(ns, `+CONTRACT ${reward}`);
 				} else {
 					log(ns, `-CONTRACT ${type}`);
+					ns.print(`data: ${JSON.stringify(data)}`);
+					ns.print(`answer: ${JSON.stringify(answer)}`);
 				}
 			} catch (e) {
 				log(ns, `error on ${file}@${host}: ${e}`);
