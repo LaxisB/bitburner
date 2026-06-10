@@ -30,9 +30,7 @@ function maybeStartShare(ns: NS, server: Server) {
 	const alreadyRunning = ns.ps(server.hostname).some((p) => p.filename === SHARE_SCRIPT);
 	if (alreadyRunning) return;
 
-	if (!ns.fileExists(SHARE_SCRIPT, server.hostname)) {
-		ns.scp(SHARE_SCRIPT, server.hostname, 'home');
-	}
+	ns.scp(SHARE_SCRIPT, server.hostname, 'home');
 
 	const pid = ns.exec(SHARE_SCRIPT, server.hostname, threads, '--runner', server.hostname, '--threads', threads);
 	if (pid) {
