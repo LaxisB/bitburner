@@ -51,7 +51,11 @@ function updateState(ns: NS) {
 				tasks.delete(msg.pid.toString());
 				const prev = recentByTarget.get(msg.target) ?? '';
 				const char = taskChar(msg.func);
-				if (prev.at(-1) !== char) recentByTarget.set(msg.target, (prev + char).slice(-10));
+				if (prev.at(-1) !== char) {
+					// replace batch hits with b and limit to 10 entries
+					const hist = (prev + char).replaceAll('gwhw', 'b').slice(-10);
+					recentByTarget.set(msg.target, hist);
+				}
 				break;
 			}
 			case 'log': {
