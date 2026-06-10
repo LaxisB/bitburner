@@ -4,8 +4,8 @@ import type { NS } from '@ns';
 
 export const BLACKLIST = new Set<string>();
 
-export function updateBlacklist(ns: NS): boolean {
-	let deblacklisted = false;
+export function updateBlacklist(ns: NS): string | null {
+	let deblacklisted = null;
 	queueRead(ns, Ports.Servers, (m) => {
 		const msg = m as { added: boolean; host: string };
 		const { added, host } = msg;
@@ -15,7 +15,7 @@ export function updateBlacklist(ns: NS): boolean {
 		} else {
 			BLACKLIST.delete(host);
 			ns.printf('-BLACKLIST %s', host);
-			deblacklisted = true;
+			deblacklisted = host;
 		}
 	});
 	return deblacklisted;

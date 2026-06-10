@@ -5,7 +5,7 @@ import { ensureSingleton } from '@/lib/utils';
 import type { NS, Server } from '@ns';
 import { BLACKLIST, updateBlacklist } from './blacklist';
 import { SCRIPT_COST, type Task } from './domain';
-import { ScheduleStrategy, dropDeadTasks, runningTasks, scheduleBatch, scheduleTask } from './scheduler';
+import * as scheduler from './scheduler';
 import { getMaxRam, getRam, getRunners, getTargets, syncRamUsed } from './servers';
 import { getBatch, getMaxConcurrentBatches, scoreTarget } from './task-selection';
 
@@ -13,9 +13,9 @@ let servers: Server[];
 
 export async function main(ns: NS) {
 	ensureSingleton(ns);
+	scheduler.killAll(ns);
 	BLACKLIST.clear();
 	ns.disableLog('ALL');
-	runningTasks.clear();
 	ns.print('INFO starting loop');
 	while (true) {
 		await loop(ns);
@@ -23,11 +23,12 @@ export async function main(ns: NS) {
 }
 
 async function loop(ns: NS) {
-	if (updateBlacklist(ns)) {
+	const deblacklisted = updateBlacklist(ns);
+	if (deblacklisted) {
 		BLACKLIST.clear();
-		runningTasks.clear();
+		scheduler.killAll(ns, deblacklisted);
 	}
-	dropDeadTasks(ns);
+	scheduler.dropDeadTasks(ns);
 
 	servers = await crawlServers(ns, 'home');
 	const targets = getTargets(ns, servers, scoreTarget);
@@ -48,7 +49,7 @@ async function loop(ns: NS) {
 			continue;
 		}
 
-		const success = scheduleBatch(ns, batch, runners, ScheduleStrategy.AS_SPECIFIED);
+		const success = scheduler.scheduleBatch(ns, batch, runners, scheduler.ScheduleStrategy.AS_SPECIFIED);
 		if (!success) {
 			syncRamUsed(ns, runners);
 			ns.print(`WARN miscalculated batch feasability for ${target.hostname} (${threads}/${maxThreads} threads)`);
@@ -76,9 +77,14 @@ async function loop(ns: NS) {
 
 		if (maxThreads < 1 || partialThreadBudget < 1) continue;
 
+		const running = scheduler.getTasksFor(target);
+		if (running.length) {
+			continue;
+		}
+
 		const batchThreads = Math.floor(batch.reduce((a, b) => a + b.threads, 0));
 		const threadsToSchedule = Math.min(batchThreads, partialThreadBudget);
-		const pids = scheduleBatch(ns, batch, runners, ScheduleStrategy.MAX_POSSIBLE);
+		const pids = scheduler.scheduleBatch(ns, batch, runners, scheduler.ScheduleStrategy.MAX_POSSIBLE);
 		if (!pids.length) {
 			ns.print(
 				`WARN partial FAILED for ${target.hostname} (threads: ${threadsToSchedule}/${Math.floor(batchThreads)}, budget: ${partialThreadBudget})`,
@@ -103,7 +109,7 @@ function computePartialBudget(
 	for (const { target, batch, threads } of targetBatches) {
 		if (!batch?.length) continue;
 		const batchRam = threads * SCRIPT_COST;
-		const pending = runningTasks.get(target.hostname);
+		const pending = scheduler.getTasksFor(target);
 		const pendingBatchCount = pending?.filter((t) => t.action === 'hack').length ?? 0;
 		const toReserve = Math.max(1, getMaxConcurrentBatches(ns, target) - pendingBatchCount);
 		for (let i = 0; i < toReserve; i++) {

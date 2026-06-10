@@ -14,7 +14,7 @@ export enum ScheduleStrategy {
 	AS_SPECIFIED = 'AS_SPECIFIED',
 }
 
-export const runningTasks = new Map<string, ScheduledTask[]>();
+const runningTasks = new Map<string, ScheduledTask[]>();
 
 export function scheduleBatch(
 	ns: NS,
@@ -109,6 +109,10 @@ export function scheduleTask(
 	return pids;
 }
 
+export function getTasksFor(server: Server) {
+	return runningTasks.get(server.hostname) ?? [];
+}
+
 export function dropDeadTasks(ns: NS) {
 	runningTasks.forEach((tasks, target) => {
 		runningTasks.set(
@@ -135,4 +139,14 @@ function executeTask(ns: NS, task: ScheduledTask) {
 	//biome-ignore lint/suspicious/noExplicitAny:
 	const pid = ns.exec(script, task.runner, task.threads, ...(args as any));
 	return pid;
+}
+
+export function killAll(ns: NS, hostname?: string) {
+	if (hostname) {
+		(runningTasks.get(hostname) ?? []).forEach((t) => ns.kill(t.pid));
+		runningTasks.delete(hostname);
+		return;
+	}
+	runningTasks.forEach((tasks) => tasks.forEach((t) => ns.kill(t.pid)));
+	runningTasks.clear();
 }

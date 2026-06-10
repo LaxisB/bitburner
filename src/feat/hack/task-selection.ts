@@ -1,12 +1,13 @@
 import type { NS, Server } from '@ns';
 import { SCRIPT_COST, type ScheduledTask, type Task } from './domain';
-import { runningTasks } from './scheduler';
+import { getTasksFor } from './scheduler';
 
 const INTER_BATCH_GAP = 50;
 const PIPELINE_BUFFER = 200;
-const BATCH_SPAN = 300; // ms from first to last task finish within a single batch
+const TASK_BUFFER = 10;
+const BATCH_SPAN = 40; // ms from first to last task finish within a single batch
 
-export const HACK_FRACTION = 1; // fraction of available money to steal per batch (0.0–1.0)
+export const HACK_FRACTION = 0.5; // fraction of available money to steal per batch (0.0–1.0)
 
 export function scoreTarget(ns: NS, server: Server): number {
 	if (!server.moneyMax) return 0;
@@ -49,7 +50,7 @@ function projectServerState(ns: NS, server: Server, tasks: Task[]): Server {
 		} else if (task.action === 'grow') {
 			projected.moneyAvailable = Math.min(
 				projected.moneyMax ?? 0,
-				(projected.moneyAvailable ?? 0) * (1 + task.threads * 0.03),
+				((projected.moneyAvailable ?? 0) + task.threads) * Math.pow(1.03, task.threads),
 			);
 			projected.hackDifficulty = Math.min(
 				100,
@@ -75,7 +76,7 @@ function buildBatch(ns: NS, server: Server): Task[] {
 	const growTime = hackTime * 3.2;
 
 	const secDelta = ns.weakenAnalyze(1);
-	const weaken1Threads = Math.floor(((server.hackDifficulty ?? 0) - (server.minDifficulty ?? 0)) / secDelta);
+	const weaken1Threads = Math.ceil(((server.hackDifficulty ?? 0) - (server.minDifficulty ?? 0)) / secDelta);
 
 	const growTarget = (server.moneyMax ?? 1) * HACK_FRACTION;
 	const growFrom = Math.max(1, server.moneyAvailable ?? 1);
@@ -86,7 +87,7 @@ function buildBatch(ns: NS, server: Server): Task[] {
 	const weaken2Threads = Math.ceil(growthEffect / secDelta);
 
 	const hackPct = ns.hackAnalyze(server.hostname) * ns.hackAnalyzeChance(server.hostname);
-	const hackThreads = Math.ceil(HACK_FRACTION / hackPct);
+	const hackThreads = Math.max(Math.ceil(HACK_FRACTION / hackPct), 1);
 
 	const weaken1: Task = {
 		action: 'weaken',
@@ -98,7 +99,7 @@ function buildBatch(ns: NS, server: Server): Task[] {
 		action: 'grow',
 		target: server.hostname,
 		threads: growthThreads,
-		delay: weakenTime + 100 - growTime,
+		delay: weakenTime + TASK_BUFFER - growTime,
 		duration: growTime,
 	};
 	const weaken2: Task = {
@@ -106,14 +107,14 @@ function buildBatch(ns: NS, server: Server): Task[] {
 		label: 'weaken 2',
 		target: server.hostname,
 		threads: growthThreads > 0 ? weaken2Threads : 0,
-		delay: 200,
+		delay: TASK_BUFFER * 2,
 		duration: weakenTime,
 	};
 	const hack: Task = {
 		action: 'hack',
 		target: server.hostname,
 		threads: hackThreads,
-		delay: weakenTime + 300 - hackTime,
+		delay: weakenTime + TASK_BUFFER * 3 - hackTime,
 		duration: hackTime,
 	};
 
@@ -123,7 +124,7 @@ function buildBatch(ns: NS, server: Server): Task[] {
 
 /** get a ready-to-run batch for a given server. this batch is automatically adjusted to factor in running tasks  */
 export function getBatch(ns: NS, server: Server): Task[] | null {
-	const pending = runningTasks.get(server.hostname) as ScheduledTask[] | undefined;
+	const pending = getTasksFor(server);
 
 	if (!pending?.length) {
 		return buildBatch(ns, server);
