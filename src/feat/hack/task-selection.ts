@@ -2,7 +2,7 @@ import type { NS, Server } from '@ns';
 import { SCRIPT_COST, type ScheduledTask, type Task } from './domain';
 import { getTasksFor } from './scheduler';
 
-const INTER_BATCH_GAP = 50;
+const INTER_BATCH_GAP = 1000;
 const PIPELINE_BUFFER = 200;
 const TASK_BUFFER = 10;
 const BATCH_SPAN = 40; // ms from first to last task finish within a single batch
