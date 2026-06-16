@@ -47,7 +47,7 @@ export async function main(ns: NS) {
 			ns.writePort(Ports.Metrics, {
 				type: 'log',
 				message:
-					`pwned ${serverspwned.slice(0, 2).join(', ')} ${serverspwned.length > 2 ? `and ${serverspwned.length - 2} more` : ''}`.trim(),
+					`+ACCESS ${serverspwned.slice(0, 2).join(', ')} ${serverspwned.length > 2 ? `and ${serverspwned.length - 2} more` : ''}`.trim(),
 			} satisfies LogEvent);
 		}
 
