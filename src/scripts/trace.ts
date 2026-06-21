@@ -1,3 +1,4 @@
+import type { StoredServer } from '@/lib/data';
 import type { NS } from '@ns';
 
 export async function main(ns: NS) {
@@ -7,31 +8,18 @@ export async function main(ns: NS) {
 		return;
 	}
 
-	const parent = new Map<string, string>();
-	const queue = ['home'];
-	parent.set('home', '');
-
-	while (queue.length) {
-		//biome-ignore lint:
-		const host = queue.shift()!;
-		if (host === target) {
-			const path: string[] = [];
-			let cur = target;
-			while (cur !== undefined) {
-				path.unshift(cur);
-				//biome-ignore lint:
-				cur = parent.get(cur)!;
-			}
-			ns.tprint(path.join(' -> '));
-			return;
-		}
-		for (const neighbor of ns.scan(host)) {
-			if (!parent.has(neighbor)) {
-				parent.set(neighbor, host);
-				queue.push(neighbor);
-			}
-		}
+	const raw = ns.read('tmp/servers.json');
+	if (!raw) {
+		ns.tprint('ERROR: tmp/servers.json not found — is feat/crawler.js running?');
+		return;
 	}
 
-	ns.tprint(`ERROR: ${target} not found`);
+	const servers = JSON.parse(raw) as StoredServer[];
+	const entry = servers.find((s) => s.hostname === target);
+	if (!entry) {
+		ns.tprint(`ERROR: ${target} not found`);
+		return;
+	}
+
+	ns.tprint(entry.path.join(' -> '));
 }

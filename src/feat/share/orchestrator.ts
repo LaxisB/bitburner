@@ -1,4 +1,4 @@
-import { crawlServers } from '@/lib/network';
+import { getServers } from '@/lib/data';
 import { ensureSingleton } from '@/lib/utils';
 import type { NS, Server } from '@ns';
 
@@ -25,7 +25,7 @@ export async function main(ns: NS) {
 			const currentEffective = Math.exp((currentPower - 1) * 25);
 			let remainingBudget = Math.ceil(TARGET_THREADS - currentEffective);
 
-			const servers = await crawlServers(ns, 'home');
+			const servers = await getServers(ns);
 			for (const server of servers) {
 				if (remainingBudget <= 0) break;
 				remainingBudget -= maybeStartShare(ns, server, remainingBudget);

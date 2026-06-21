@@ -1,7 +1,7 @@
 import type { Event, ExecStartEvent } from '@/domain';
 import { scoreTarget } from '@/feat/hack/task-selection';
 import { Ports } from '@/lib/constants';
-import { crawlServers } from '@/lib/network';
+import { getServers } from '@/lib/data';
 import { ensureSingleton, queueRead } from '@/lib/utils';
 import type { NS, Server } from '@ns';
 
@@ -34,7 +34,7 @@ export async function main(ns: NS) {
 	let lastRender = 0;
 	while (true) {
 		if (updateState(ns) || Date.now() - lastRender > 2000) {
-			const servers = await crawlServers(ns, 'home');
+			const servers = await getServers(ns);
 			logState(ns, servers, params);
 			lastRender = Date.now();
 		}
@@ -122,16 +122,15 @@ function logState(ns: NS, servers: Server[], params: { full: boolean }) {
 					(s.moneyMax ?? 0) > 0,
 			)
 			.map((s) => {
-				const fresh = ns.getServer(s.hostname);
-				const money = fresh.moneyAvailable ?? 0;
-				const moneyMax = fresh.moneyMax ?? 1;
+				const money = s.moneyAvailable ?? 0;
+				const moneyMax = s.moneyMax ?? 1;
 				return {
-					hostname: fresh.hostname,
+					hostname: s.hostname,
 					moneyPct: (money / moneyMax) * 100,
-					sec: fresh.hackDifficulty ?? 0,
-					minSec: fresh.minDifficulty ?? 0,
-					history: recentByTarget.get(fresh.hostname) ?? '',
-					score: scoreTarget(ns, fresh, player),
+					sec: s.hackDifficulty ?? 0,
+					minSec: s.minDifficulty ?? 0,
+					history: recentByTarget.get(s.hostname) ?? '',
+					score: scoreTarget(ns, s, player),
 				};
 			})
 			.filter((s) => tasksByTarget.has(s.hostname))

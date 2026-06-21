@@ -1,6 +1,6 @@
 import type { LogEvent } from '@/domain';
 import { Ports } from '@/lib/constants';
-import { crawlServers } from '@/lib/network';
+import { getServers, type StoredServer } from '@/lib/data';
 import { ensureSingleton } from '@/lib/utils';
 import type { NS, Server } from '@ns';
 import { BLACKLIST, updateBlacklist } from './blacklist';
@@ -9,7 +9,7 @@ import * as scheduler from './scheduler';
 import { getMaxRam, getRam, getRunners, getTargets, syncRamUsed } from './servers';
 import { getBatch, getMaxConcurrentBatches, scoreTarget } from './task-selection';
 
-let servers: Server[];
+let servers: StoredServer[];
 
 export async function main(ns: NS) {
 	ensureSingleton(ns);
@@ -32,7 +32,7 @@ async function loop(ns: NS) {
 	}
 	scheduler.dropDeadTasks(ns);
 
-	servers = await crawlServers(ns, 'home');
+	servers = await getServers(ns);
 	const player = ns.getPlayer();
 	if (!player) {
 		ns.alert('could not get player in feat/hack');

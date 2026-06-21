@@ -1,17 +1,19 @@
 import type { ContractEvent, LogEvent } from '@/domain';
+import type { StoredServer } from '@/lib/data';
 import type { NS } from '@ns';
 import { HOME, Ports } from '../lib/constants';
-import { crawlServers } from '../lib/network';
 
 /**
  * Gains root on all reachable servers and emits contract file events to Port 4.
+ * Also writes the full network topology to tmp/servers.json each loop.
  */
 export async function main(ns: NS) {
 	ns.disableLog('ALL');
 	const alreadyPwned = new Set<string>();
 
 	while (true) {
-		const servers = await crawlServers(ns, HOME, 100);
+		const servers = crawl(ns);
+		ns.write('tmp/servers.json', JSON.stringify(servers), 'w');
 		const newlyPwned: string[] = [];
 
 		for (const server of servers) {
@@ -42,6 +44,42 @@ export async function main(ns: NS) {
 
 		await ns.sleep(5000);
 	}
+}
+
+function crawl(ns: NS): StoredServer[] {
+	const visited = new Set<string>();
+	const parent = new Map<string, string>();
+	const queue: string[] = [HOME];
+	const results: StoredServer[] = [];
+
+	visited.add(HOME);
+	parent.set(HOME, '');
+
+	while (queue.length) {
+		// biome-ignore lint:
+		const host = queue.shift()!;
+		const neighbors = ns.scan(host);
+		const server = ns.getServer(host);
+
+		const path: string[] = [];
+		let cur: string | undefined = host;
+		while (cur !== undefined && cur !== '') {
+			path.unshift(cur);
+			cur = parent.get(cur);
+		}
+
+		results.push({ ...server, neighbors, path });
+
+		for (const neighbor of neighbors) {
+			if (!visited.has(neighbor)) {
+				visited.add(neighbor);
+				parent.set(neighbor, host);
+				queue.push(neighbor);
+			}
+		}
+	}
+
+	return results;
 }
 
 function pwnServer(ns: NS, host: string) {
