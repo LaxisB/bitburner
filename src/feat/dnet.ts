@@ -23,6 +23,8 @@ const PASSWORD_RESOLVERS: Record<string, (ns: NS, details: DarknetServerDetails)
 	'EuroZone Free': (_ns, details) => EU_COUNTRIES.filter((x) => x.length === details.passwordLength),
 };
 
+const KNOWN_PASSWORDS = new Map<string, string>();
+
 export async function main(ns: NS): Promise<void> {
 	ns.disableLog('ALL');
 
@@ -32,11 +34,11 @@ export async function main(ns: NS): Promise<void> {
 	const flags = ns.flags([['version', 0]]);
 	const version = flags.version as number;
 
-	//3.7 cost
 	await spread(ns, version);
 
 	// stop here if we're on home: we already started the spread, nothing else left to do
 	if (_h === 'home') {
+		KNOWN_PASSWORDS.clear();
 		return;
 	}
 
@@ -49,7 +51,6 @@ export async function main(ns: NS): Promise<void> {
 		for (const file of ns.ls(host, '.cct')) {
 			ns.writePort(4, { type: 'contract', file, host } satisfies ContractEvent);
 		}
-		// 2 cost
 		await ns.dnet.phishingAttack();
 		await spread(ns, version);
 	}
@@ -70,20 +71,31 @@ function resolvePassword(ns: NS, details: DarknetServerDetails): string[] {
 /** (re)auth */
 async function ensureSession(ns: NS, host: string): Promise<boolean> {
 	const details = ns.dnet.getServerDetails(host);
+
+	// best case: we know the PW
+	if (details.hasSession && KNOWN_PASSWORDS.has(host)) {
+		// biome-ignore lint:
+		return ns.dnet.connectToSession(host, KNOWN_PASSWORDS.get(host)!).success;
+	}
+
+	// fallback: fresh resolve (should not happen)
 	const passwords = resolvePassword(ns, details);
 	if (details.hasSession) {
 		for (const password of passwords) {
 			const result = ns.dnet.connectToSession(host, password);
 			if (result.success) {
+				KNOWN_PASSWORDS.set(host, password);
 				return true;
 			}
 			return false;
 		}
 	}
 
+	// first run: need to resolve
 	for (const password of passwords) {
 		const result = await ns.dnet.authenticate(host, password);
 		if (result.success) {
+			KNOWN_PASSWORDS.set(host, password);
 			return true;
 		}
 	}
@@ -102,9 +114,6 @@ function getRunningVersion(ns: NS, host: string): number {
 	return -1;
 }
 
-/**
- * cost: 3.7
- */
 async function spread(ns: NS, version: number): Promise<void> {
 	const neighbors = ns.dnet.probe();
 	for (const neighbor of neighbors) {
@@ -126,7 +135,7 @@ async function spread(ns: NS, version: number): Promise<void> {
 
 const DEFAULT_PASSWORDS = ['admin', 'password', '0000', '12345'];
 const DOG_NAMES = ['fido', 'spot', 'rover', 'max'];
-const KNOWN_PASSWORDS = [
+const RAINBOW_TABLE = [
 	'123456',
 	'password',
 	'12345678',
