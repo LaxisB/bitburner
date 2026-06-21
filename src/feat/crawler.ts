@@ -19,7 +19,11 @@ export async function main(ns: NS) {
 			if (host.startsWith('NODE')) continue;
 
 			if (!server.hasAdminRights && !alreadyPwned.has(host)) {
-				pwnServer(ns, host);
+				const gainedAdmin = pwnServer(ns, host);
+				if (gainedAdmin) {
+					newlyPwned.push(host);
+					alreadyPwned.add(host);
+				}
 			}
 
 			if (ns.getServer(host).hasAdminRights) {
@@ -61,7 +65,7 @@ function pwnServer(ns: NS, host: string) {
 	} catch (_) {}
 
 	if (ns.getServer(host).hasAdminRights) {
-		newlyPwned.push(host);
-		alreadyPwned.add(host);
+		return true;
 	}
+	return false;
 }

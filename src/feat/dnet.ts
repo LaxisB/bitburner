@@ -1,4 +1,4 @@
-import type { LogEvent } from '@/domain';
+import type { ContractEvent, LogEvent } from '@/domain';
 import type { DarknetServerDetails, NS } from '@ns';
 
 const WORM_SCRIPT = '/feat/dnet.js';
@@ -41,10 +41,14 @@ export async function main(ns: NS): Promise<void> {
 	}
 
 	while (true) {
-		ns.ls(host)
-			.filter((x) => x.endsWith('.cache'))
-			// 2 cost
-			.forEach((cache) => ns.dnet.openCache(cache));
+		// grab caches
+		for (const file of ns.ls(host, '.cache')) {
+			ns.dnet.openCache(file);
+		}
+		// and queue contracts
+		for (const file of ns.ls(host, '.cct')) {
+			ns.writePort(4, { type: 'contract', file, host } satisfies ContractEvent);
+		}
 		// 2 cost
 		await ns.dnet.phishingAttack();
 		await spread(ns, version);
