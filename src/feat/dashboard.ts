@@ -8,7 +8,7 @@ import type { NS, Server } from '@ns';
 const RAM_COST: Record<string, number> = { grow: 1.75, weaken: 1.75, hack: 1.75, share: 4 };
 const LOG_LENGTH = 4;
 
-const RAMBAR_WIDTH = 78;
+const RAMBAR_WIDTH = 70;
 const TASKBAR_WIDTH = 45;
 
 const tasks = new Map<string, ExecStartEvent & { time: number }>();
@@ -30,7 +30,7 @@ export async function main(ns: NS) {
 	ns.clearLog();
 	ns.ui.openTail();
 	ns.ui.setTailTitle('Dashboard');
-	ns.ui.resizeTail(800, 600);
+	params.full ? ns.ui.resizeTail(800, 600) : ns.ui.resizeTail(720, 300);
 	let lastRender = 0;
 	while (true) {
 		if (updateState(ns) || Date.now() - lastRender > 2000) {
