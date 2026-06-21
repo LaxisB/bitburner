@@ -35,8 +35,8 @@ export async function main(ns: NS): Promise<void> {
 		return;
 	}
 
-	const { isHacking } = ns.gang.getGangInformation();
-	const trainingTask = isHacking ? GangTask.TrainHacking : GangTask.TrainCombat;
+	// const { isHacking } = ns.gang.getGangInformation();
+	const trainingTask = GangTask.TerritoryWarfare; // isHacking ? GangTask.TrainHacking : GangTask.TrainCombat;
 
 	while (true) {
 		await ns.gang.nextUpdate();
