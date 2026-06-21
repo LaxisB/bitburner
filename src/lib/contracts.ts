@@ -602,7 +602,7 @@ const SOLVERS: Partial<Record<string, (data: unknown) => unknown>> = {
 		const [text, key] = d as [string, string];
 		return solveVigenere(text, key);
 	},
-	'Square Root': (d) => solveSquareRoot(d as bigint),
+	'Square Root': (d) => String(solveSquareRoot(d as bigint)),
 	'Total Number of Primes': (d) => solveTotalPrimes(d as number[]),
 	'Largest Rectangle in a Matrix': (d) => solveLargestRectangle(d as (1 | 0)[][]),
 };
