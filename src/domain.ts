@@ -32,4 +32,10 @@ export interface ServerDeathEvent extends BaseEvent {
 	host: string;
 }
 
-export type Event = ExecStartEvent | ExecEndEvent | LogEvent | ServerDeathEvent;
+export interface ContractEvent extends BaseEvent {
+	type: 'contract';
+	file: string;
+	host: string;
+}
+
+export type Event = ExecStartEvent | ExecEndEvent | LogEvent | ServerDeathEvent | ContractEvent;

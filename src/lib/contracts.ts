@@ -609,7 +609,13 @@ const SOLVERS: Partial<Record<string, (data: unknown) => unknown>> = {
 
 export type SolveResult =
 	| { success: true; reward: string }
-	| { success: false; reason: 'no_solver' | 'no_answer' | 'wrong_answer'; type: string; data?: unknown; answer?: unknown };
+	| {
+			success: false;
+			reason: 'no_solver' | 'no_answer' | 'wrong_answer';
+			type: string;
+			data?: unknown;
+			answer?: unknown;
+	  };
 
 export function solveContract(ns: NS, file: string, host: string): SolveResult {
 	const type = ns.codingcontract.getContractType(file, host);

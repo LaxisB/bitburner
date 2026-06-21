@@ -4,7 +4,7 @@ import { Ports } from './lib/constants';
 
 const AUTO_LAUNCH: [string, ScriptArg[]][] = [
 	['feat/hack/orchestrator.js', []],
-	['feat/hack/autopwn.js', []],
+	['feat/crawler.js', []],
 	['feat/cloud.js', []],
 	['feat/dashboard.js', []],
 	['feat/contracts.js', []],
