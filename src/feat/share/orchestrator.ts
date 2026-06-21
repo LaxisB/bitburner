@@ -6,14 +6,16 @@ const SHARE_SCRIPT = '/feat/share/share.js';
 const SHARE_RAM = 4;
 const HOME_RESERVE = 64;
 
-// Pareto target: 25% rep boost.
-const TARGET_BONUS = 1.25;
-// Inverse of: bonus = 1 + ln(shareThreads)/25
-const TARGET_THREADS = Math.ceil(Math.exp((TARGET_BONUS - 1) * 25)); // ≈ 519
-
 export async function main(ns: NS) {
 	ensureSingleton(ns);
 	ns.disableLog('ALL');
+
+	const params = ns.flags([['target', 1.25]]) as { target: number };
+
+	// Pareto target: 25% rep boost.
+	const TARGET_BONUS = params.target;
+	// Inverse of: bonus = 1 + ln(shareThreads)/25
+	const TARGET_THREADS = Math.ceil(Math.exp((TARGET_BONUS - 1) * 25)); // ≈ 519
 
 	while (true) {
 		const currentPower = ns.getSharePower();
