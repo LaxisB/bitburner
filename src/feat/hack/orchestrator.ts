@@ -17,6 +17,8 @@ export async function main(ns: NS) {
 	BLACKLIST.clear();
 	ns.disableLog('ALL');
 	ns.print('INFO starting loop');
+	// sleep to let other init scripts spin up
+	await ns.sleep(5_000);
 	while (true) {
 		await loop(ns);
 	}
@@ -31,11 +33,16 @@ async function loop(ns: NS) {
 	scheduler.dropDeadTasks(ns);
 
 	servers = await crawlServers(ns, 'home');
-	const targets = getTargets(ns, servers, scoreTarget);
+	const player = ns.getPlayer();
+	if (!player) {
+		ns.alert('could not get player in feat/hack');
+		return;
+	}
+	const targets = getTargets(ns, servers, (ns, server) => scoreTarget(ns, server, player));
 	const runners = getRunners(servers);
 
 	const targetBatches = targets.map((target) => {
-		const batch = getBatch(ns, target);
+		const batch = getBatch(ns, target, player);
 		const threads = batch?.reduce((a, c) => a + c.threads, 0) ?? 0;
 		return { target, batch, threads, scheduled: false };
 	});
@@ -66,7 +73,7 @@ async function loop(ns: NS) {
 		syncRamUsed(ns, runners);
 	}
 
-	let partialThreadBudget = computePartialBudget(ns, runners, targetBatches);
+	let partialThreadBudget = computePartialBudget(ns, runners, targetBatches, player);
 
 	// No full batch scheduled — schedule a capped partial task to prep or generate income.
 	// Batches are prioritized by score, so start with the largest non-scheduled one.
@@ -103,6 +110,7 @@ function computePartialBudget(
 	ns: NS,
 	runners: Server[],
 	targetBatches: Array<{ target: Server; batch: Task[] | null; threads: number }>,
+	player: ReturnType<NS['getPlayer']>,
 ): number {
 	const totalMaxRam = runners.reduce((a, c) => a + getMaxRam(c), 0);
 	let simAvailable = totalMaxRam;
@@ -111,7 +119,7 @@ function computePartialBudget(
 		const batchRam = threads * SCRIPT_COST;
 		const pending = scheduler.getTasksFor(target);
 		const pendingBatchCount = pending?.filter((t) => t.action === 'hack').length ?? 0;
-		const toReserve = Math.max(1, getMaxConcurrentBatches(ns, target) - pendingBatchCount);
+		const toReserve = Math.max(1, getMaxConcurrentBatches(ns, target, player) - pendingBatchCount);
 		for (let i = 0; i < toReserve; i++) {
 			if (batchRam <= simAvailable) simAvailable -= batchRam;
 			else break;
