@@ -6,9 +6,12 @@ const AUTO_LAUNCH: [string, ScriptArg[]][] = [
 	['feat/hack/orchestrator.js', []],
 	['feat/hack/autopwn.js', []],
 	['feat/cloud.js', []],
-	['feat/dashboard.js', ['--full']],
+	['feat/dashboard.js', []],
 	['feat/contracts.js', []],
-	['feat/share/orchestrator.js', []],
+	['feat/dnet.js', []],
+	['feat/gang.js', []],
+	['feat/hacknet.js', []],
+	// ['feat/share/orchestrator.js', []],
 	// ['feat/stocks.js', []],
 ];
 
