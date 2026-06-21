@@ -6,7 +6,7 @@ import { ensureSingleton, queueRead } from '@/lib/utils';
 import type { NS, Server } from '@ns';
 
 const RAM_COST: Record<string, number> = { grow: 1.75, weaken: 1.75, hack: 1.75, share: 4 };
-const LOG_LENGTH = 4;
+const LOG_LENGTH = 10;
 
 const RAMBAR_WIDTH = 70;
 const TASKBAR_WIDTH = 45;

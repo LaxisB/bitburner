@@ -11,8 +11,8 @@ const AUTO_LAUNCH: [string, ScriptArg[]][] = [
 	['feat/dnet.js', []],
 	['feat/gang.js', []],
 	['feat/hacknet.js', []],
+	['feat/stocks.js', []],
 	// ['feat/share/orchestrator.js', []],
-	// ['feat/stocks.js', []],
 ];
 
 export async function main(ns: NS) {

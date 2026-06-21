@@ -18,12 +18,15 @@ export function formatDuration(millis: number) {
 }
 
 export function formatNum(num: number) {
-	return num < 0.00005 ? '0' : numFormatter.format(num);
+	return num < 0.00005 ? '0' : num.toExponential(3).replace('e+', 'e');
 }
 export function formatPercent(num: number) {
 	return `${(num * 100).toFixed(2)}%`;
 }
 
+export function formatMoneyExp(money: number) {
+	return `$${formatNum(money)}`;
+}
 export function formatMoney(money: number) {
 	if (!+money) return '$ 0';
 
