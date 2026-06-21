@@ -1,6 +1,6 @@
 import type { LogEvent } from '@/domain';
 import { Ports } from '@/lib/constants';
-import { getServers, type StoredServer } from '@/lib/data';
+import { type StoredServer, getServers } from '@/lib/data';
 import { ensureSingleton } from '@/lib/utils';
 import type { NS, Server } from '@ns';
 import { BLACKLIST, updateBlacklist } from './blacklist';
