@@ -30,7 +30,8 @@ export async function main(ns: NS) {
 	ns.clearLog();
 	ns.ui.openTail();
 	ns.ui.setTailTitle('Dashboard');
-	params.full ? ns.ui.resizeTail(800, 600) : ns.ui.resizeTail(720, 300);
+	// lines * fontsize * lineheight + header size
+	params.full ? ns.ui.resizeTail(604, 600) : ns.ui.resizeTail(604, (LOG_LENGTH + 2) * 16 * 1.5 + 30);
 	let lastRender = 0;
 	while (true) {
 		if (updateState(ns) || Date.now() - lastRender > 2000) {
