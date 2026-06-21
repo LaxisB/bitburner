@@ -12,12 +12,14 @@ export async function main(ns: NS) {
 	parent.set('home', '');
 
 	while (queue.length) {
+		//biome-ignore lint:
 		const host = queue.shift()!;
 		if (host === target) {
 			const path: string[] = [];
 			let cur = target;
 			while (cur !== undefined) {
 				path.unshift(cur);
+				//biome-ignore lint:
 				cur = parent.get(cur)!;
 			}
 			ns.tprint(path.join(' -> '));
