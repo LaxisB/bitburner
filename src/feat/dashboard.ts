@@ -110,6 +110,7 @@ function logState(ns: NS, servers: Server[], params: { full: boolean }) {
 			arr.push(t);
 			tasksByTarget.set(t.target, arr);
 		});
+		const player = ns.getPlayer();
 
 		const serverRows = servers
 			.filter(
@@ -130,7 +131,7 @@ function logState(ns: NS, servers: Server[], params: { full: boolean }) {
 					sec: fresh.hackDifficulty ?? 0,
 					minSec: fresh.minDifficulty ?? 0,
 					history: recentByTarget.get(fresh.hostname) ?? '',
-					score: scoreTarget(ns, fresh),
+					score: scoreTarget(ns, fresh, player),
 				};
 			})
 			.filter((s) => tasksByTarget.has(s.hostname))
